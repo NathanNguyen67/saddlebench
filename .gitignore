@@ -1,0 +1,26 @@
+# Never commit published or private registry data
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.env
+*.sqlite
+*.sqlite-*
+*.db
+*.npz
+*.tar
+*.tar.gz
+*.zip
+*.traj
+*.extxyz
+*.jsonl
+*.jsonl.gz
+**/private/
+**/minima/
+**/reference.jsonl
+**/diagnostic_saddles.jsonl.gz
+**/private_manifest.json
+**/READY.json
+**/snapshot_cache/
+*.log

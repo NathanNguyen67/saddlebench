@@ -1,0 +1,40 @@
+{
+  "completeness": {
+    "artifact_provenance_coverage_verified": false,
+    "raw_search_coverage_verified": false,
+    "registry_rows_enumerated": false,
+    "unpublished_event_scope_included": false
+  },
+  "export_version": "synthetic_fixture_v1",
+  "file_sha256": {
+    "doublemin_observations.jsonl": "0c6f643a9fff8b7e936c6e85aece0d7d88ac60c956e0d41df50c62d9f7c5f345",
+    "geometries.jsonl": "2e5d1198412e7e0cc3906d1ce7175368018c3fd0f69b5a865e8836c444ddecd5",
+    "minima.jsonl": "30b35ea614acaaa15fbef742027afde7cbc9b66785a89e8df51ae7c2c27c1e52",
+    "reactions.jsonl": "3b9ca0d4ad61346d3f71bc46d0667d52650e7b37175f0c45153d341993e16a15",
+    "saddles.jsonl": "d322bb59b858bc56c173e5c00abafa39c761a70061b005f712450daa9094f574",
+    "source_artifacts.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "limitations": [
+    "SYNTHETIC UNVERIFIED DATA; NO SCIENTIFIC CREDIT",
+    "Geometry/energies arbitrary, only for interface tests"
+  ],
+  "record_counts": {
+    "doublemin_observations.jsonl": 4,
+    "geometries.jsonl": 7,
+    "minima.jsonl": 1,
+    "reactions.jsonl": 2,
+    "saddles.jsonl": 4,
+    "source_artifacts.jsonl": 0
+  },
+  "registry": {
+    "absolute_path": "SYNTHETIC_NOT_REAL",
+    "published_through": 0,
+    "registry_version": "SYNTHETIC",
+    "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "size_bytes": 0
+  },
+  "schema_version": "saddlemill-evidence-v1",
+  "scientific_contract_id": "SCIENTIFIC_CONTRACT_20261002_v1",
+  "source_commit": "SYNTHETIC",
+  "source_repository": "SYNTHETIC"
+}
