@@ -1,102 +1,101 @@
-# SaddleBench — open-source prototype scorer
+# SaddleBench
 
-**Both the source code and frozen scoring reference are public.** This GitHub
-repository contains code and synthetic fixtures, not the 73,839 real saddle
-geometries. The registered reference is downloadable anonymously from
-https://huggingface.co/datasets/traingletrain/saddlebench-reference-private
-(the original repository name remains unchanged), and starting minima from
-https://huggingface.co/datasets/traingletrain/saddlebench-prototype.
+SaddleBench evaluates predicted saddle-point geometries against a published reference of reaction pathways. The Python scorer reports matched reaction identities, coverage, duplicate discoveries, and diagnostic classifications. It does not run saddle searches or energy calculations.
 
-Publishing expected answers permits independent CPU scoring without LS6, a token,
-or any Hugging Face account. It also permits benchmark answer lookup, so the
-prototype score is an open-reference metric, **not a blind leaderboard**.
+This is an **open-reference research prototype**. The reference data and scoring code are public. The current dataset is neither exhaustive nor independently certified as a benchmark ground truth.
 
-Prototype source baseline: SaddleBench RC9, registry watermark 7522,
-registered canonical registry SHA256 `e33f7ac55cec2bc208fd1bb4ee74d047224fa072a7a43be1effdb4891c495c88`.
-The registry-derived reference currently contains 2,231 eligible reaction identities,
-and a 73,839-saddle diagnostic index. This is a historical snapshot, not a PES-certified
-or complete ground-truth dataset.
+## Data
 
-## Install on ANY cluster (CPU side of a GPU search)
+| Dataset | Description |
+| --- | --- |
+| [Starting minima](https://huggingface.co/datasets/traingletrain/saddlebench-prototype) | 123 starting structures in ASE trajectory format, case metadata, and submission examples. |
+| [Scoring reference](https://huggingface.co/datasets/traingletrain/saddlebench-reference-private) | 2,231 eligible reference reaction identities and a diagnostic catalog of 73,839 registered saddles. |
+
+Both datasets are public. The `-private` suffix is part of the reference dataset's original name; authentication is not required.
+
+The released reference corresponds to registry publication watermark **7,522** and registry SHA-256 `e33f7ac55cec2bc208fd1bb4ee74d047224fa072a7a43be1effdb4891c495c88`. These counts describe this snapshot only, not any later registry publication.
+
+## Installation
+
+Python 3.10 or newer is required.
 
 ```bash
-python -m venv .venv
-. .venv/bin/activate
+git clone https://github.com/NathanNguyen67/saddlebench.git
+cd saddlebench
 python -m pip install -e .
 python -m pip install huggingface_hub
-python -m pytest -q  # optional: pip install pytest
 ```
 
-The scorer requires ASE and NumPy, but NO GPU, Flux, Slurm, FairChem, or LS6
-runtime. It works with `.traj` files produced on another GPU cluster.
+Scoring is CPU-only and can be run independently of the software used to generate predictions.
 
-## Get a starting minimum
+## Quick start
 
-Visit the public dataset, read `cases.csv`, and download `minima/<case_id>.traj`.
-To fetch via the CLI (with `huggingface_hub` installed):
+Select a case from `cases.csv` in the starting-minima dataset. Download its input structure:
 
 ```bash
-hf download traingletrain/saddlebench-prototype minima/case0001.traj --repo-type dataset --local-dir ./inputs
+hf download traingletrain/saddlebench-prototype minima/case0001.traj \
+  --repo-type dataset --local-dir inputs
 ```
 
-You can inspect/download cases with your browser. The target minimum has an
-explicit set of ASE constraints. Provide your predicted saddles as a readable ASE
-`.traj` for the SAME case, respecting the same atomic ordering/cell/PBC/constraints,
-and give actual elapsed seconds. The `pes_id` in the prototype remains an
-UNVERIFIED scope placeholder, so compare under a consistent calculator.
+Run a saddle-search method from the selected structure and save the proposed saddle geometries to an ASE `.traj` file, with one frame per candidate. Preserve atomic ordering, periodic cell and fixed-atom constraints.
 
-## Run the public-reference scorer from any cluster (no login)
-
-The two datasets can be downloaded anonymously. After a GPU saddle search,
-submit an ASE `.traj` file for a single case:
+Score the candidate geometries:
 
 ```bash
 python scripts/score_from_hf.py \
   --case-id case0001 \
-  --submission ./predicted_saddles.traj \
+  --submission predicted_saddles.traj \
   --elapsed-seconds 3600 \
-  --output ./score_case0001.json
+  --output score.json
 ```
 
-The command downloads the public `cases.csv` and the public frozen reference,
-verifies SHA256 and registry provenance, performs CPU-only local scoring,
-and writes JSON. It never uploads predictions. Subsequent runs reuse the cache
-(`--cache-dir /path/to/cache`). The original `private_manifest.json` filename
-is retained for compatibility; **the dataset is now public**.
+`--elapsed-seconds` is the total search runtime, including unsuccessful attempts, not the duration of scoring. The command downloads and checks the reference, performs local comparisons, and writes a JSON report. Predictions are not uploaded. Successful execution prints `SCORE_VERIFY=PASS`. Choose a new output path for each invocation; the script does not overwrite existing reports.
 
-For multiple cases, use `--submission-csv file.csv` instead of
-`--case-id/--submission/--elapsed-seconds` (see `docs/SUBMISSION_FORMAT.md`).
-An online scoring service is optional, not required for local scoring.
+To score several cases, create `submission.csv`:
 
-## Scoring definition (prototype)
+```csv
+case_id,trajectory,elapsed_seconds
+case0001,predictions_case0001.traj,3600
+case0002,predictions_case0002.traj,4800
+```
 
-For each selected case with K>0 known eligible reactions, U unique reaction
-identities found, B unique registered bad saddle identities, and elapsed
-hours T: score = `100 * (U/K)**2 * U/(U+2*B) / T`. High coverage is rewarded,
-repeated credited reactions add no credit. Known higher-order or connected
-high-barrier saddles cause one penalty per identity even if both classifications
-apply. Known disconnected first-order, unknown and ambiguous matches are
-neutral. For K=0, coverage and score are undefined. The reference is filtered
-at saddle fmax <=0.005 eV/A, both DoubleMin endpoint fmax <=0.0025 eV/A,
-connected reaction with barrier strictly <1.5 eV. Non-Powell historical
-DoubleMin is allowed in `all_saddles`; canonical-only is a future switch.
-Matching uses the existing core-drift maxdev (<=0.2 A), not topology.
+Then run:
 
-Exploration confidence is an uncalibrated shuffle-based redundancy heuristic,
-NOT a statistical guarantee. Search runtime is self-reported; this is NOT a
-trusted public leaderboard. PES identity has not been independently verified.
+```bash
+python scripts/score_from_hf.py --submission-csv submission.csv --output batch_score.json
+```
 
-## Testing the scorer on a SECOND GPU cluster
+Relative trajectory paths are interpreted relative to the CSV. See [Submission format](docs/SUBMISSION_FORMAT.md) for file and scope requirements.
 
-1. Use a GPU to search from a chosen `caseNNNN.traj` using the intended PES.
-2. Save predictions to `predicted_saddles.traj` with compatible ASE metadata.
-3. Run the scorer above (CPU only). It downloads public reference data on first use.
-4. Confirm the JSON includes reaction credit, duplicate handling, higher-order,
-   high-barrier, unknown/ambiguous and coverage/score categories as applicable.
-5. For a genuine end-to-end test, report the method/PES, GPU model, runtime,
-   case ID, prediction count and scored JSON. No HF token is required.
+## Scoring definition
 
-Repository: https://github.com/NathanNguyen67/saddlebench.
+For a case with at least one eligible reference reaction, the provisional score is
 
-This project is independently packaged from standalone SaddleMill and does not
-modify SaddleMill, Benchmark or the production registry.
+```text
+score = 100 * (U / K)^2 * (U / (U + 2*B)) / T
+```
+
+`K` is the number of eligible reference reaction identities for that case; `U` is the number of distinct credited reaction identities; `B` is the number of distinct matched known-bad saddle identities (non-first-order or connected high-barrier); and `T` is the reported search time in hours. Duplicate discoveries do not increase `U`. Known disconnected first-order saddles, ambiguous matches and unknown predictions are neutral. If `K = 0`, coverage and score are undefined.
+
+The published reference uses a saddle force threshold of **0.005 eV/Å**, DoubleMin endpoint thresholds of **0.0025 eV/Å** for each endpoint, a connected-reaction requirement and a barrier **strictly below 1.5 eV**. Its `all_saddles` mode admits eligible historical DoubleMin protocols; it does not award credit for every first-order saddle in the registry.
+
+Matching uses core-drift **maxdev ≤ 0.2 Å**, with compatible atom ordering, cell, periodic boundary conditions, fixed-atom metadata and case scope. It does not use connectivity topology to declare geometric identity. These eligibility criteria are evaluated from stored reference evidence; the scorer does not rerun optimizations or Hessian calculations.
+
+## Reference limitations
+
+**Constraint metadata.** Some published saddle geometries have unknown fixed-atom constraints and cannot be compared by the current strict matcher. In a read-only audit, `case0006` had 1,243 such reference saddle members and `case0022` had 2,196. Neither case had any comparable candidate-reference pairs in that audit. Consequently, a `NO_MATCH` or `UNKNOWN_UNMATCHED` result for affected cases must not be interpreted as evidence of geometric disagreement. The reference requires provenance repair before reliable coverage can be reported for those cases.
+
+**Coverage.** The reference consists of registered observations, not an exhaustive enumeration of possible saddles. An unknown candidate is not automatically incorrect.
+
+**Potential-energy surface.** The reference's calculator/PES scope has not been independently verified. Scores obtained using different calculators are not necessarily comparable.
+
+**Benchmark use.** The reference is public and runtime is self-reported. Results should be treated as research diagnostics, not independently validated leaderboard rankings. The exploration-confidence field is a redundancy-based heuristic, not a calibrated probability.
+
+## Tests
+
+```bash
+python -m pip install pytest
+python -m pytest -q
+```
+
+The test fixtures exercise software behavior; they do not establish scientific completeness of the reference.
