@@ -17,7 +17,7 @@ from pathlib import Path
 
 from saddlebench.reference.snapshot import canonical, validate_geometry
 from saddlebench.reference.safe_output import AtomicDirectory
-from saddlebench.matching.geometry import core_drift_maxdev
+from saddlebench.matching.geometry import core_drift_maxdev, cannot_match_by_anchor
 from saddlebench.io.extxyz import read_extxyz
 
 SADDLE_FMAX = 0.005
@@ -255,20 +255,26 @@ def read_submissions(path,start=None,pes=None,parent=None):
             raise ValueError('MISSING_SUBMISSION_SCOPE')
     return submissions
 
-def score(reference,submission,elapsed_seconds,start=None,pes=None,parent=None):
+def score(reference,submission,elapsed_seconds,start=None,pes=None,parent=None,progress=None,prepared_reference=None):
     if not isinstance(elapsed_seconds,(int,float)) or not math.isfinite(elapsed_seconds) or elapsed_seconds<=0:
         raise ValueError('INVALID_WALLTIME')
-    manifest,reactions=load_reference(reference)
+    if progress:progress('reference_load',0,1)
+    manifest,reactions=(load_reference(reference) if prepared_reference is None else prepared_reference)
+    if progress:progress('reference_load',1,1)
+    if progress:progress('submission_load',0,1)
     submissions=read_submissions(submission,start,pes,parent)
+    if progress:progress('submission_load',1,1)
     by_scope=defaultdict(list)
     for r in reactions:
         for m in r['members']:
             by_scope[(r['structure_id'],r['starting_minimum_id'],r['pes_id'],tuple(m['geometry']['numbers']))].append((r,m))
     credited=set(); results=[];scope_counts=defaultdict(Counter)
-    for sub in submissions:
+    if progress:progress('eligible',0,len(submissions))
+    for progress_i,sub in enumerate(submissions,1):
         scope=(sub['parent_structure_id'],sub['starting_minimum_id'],sub['pes_id'])
         ids=set(); errors=set(); matched_groups={}
         for r,m in by_scope.get((*scope,tuple(sub['geometry']['numbers'])),[]):
+            if cannot_match_by_anchor(sub['geometry'],m['geometry'],0.2):continue
             try:d=_compare(sub['geometry'],m['geometry'])
             except ValueError as e:errors.add(str(e));continue
             if d<=0.2+1e-12:
@@ -294,6 +300,8 @@ def score(reference,submission,elapsed_seconds,start=None,pes=None,parent=None):
                         'matched_saddle_groups':[{'saddle_group_id':gid,
                             'registered_saddle_count':matched_groups[gid]}
                             for gid in sorted(matched_groups)]})
+        if progress and (progress_i%10==0 or progress_i==len(submissions)):
+            progress('eligible',progress_i,len(submissions))
     return {'schema_version':'saddlebench-reaction-prototype-score-v1','mode':manifest['mode'],
             'registry_sha256':manifest['registry_sha256'],'reference_sha256':manifest['reference_sha256'],
             'elapsed_seconds':elapsed_seconds,'eligible_unique_count':len(credited),

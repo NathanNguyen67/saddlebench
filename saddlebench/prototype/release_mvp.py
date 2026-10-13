@@ -18,7 +18,7 @@ import random
 import shutil
 
 from saddlebench.prototype import reaction_mvp as rm
-from saddlebench.matching.geometry import core_drift_maxdev
+from saddlebench.matching.geometry import core_drift_maxdev, cannot_match_by_anchor
 from saddlebench.reference.snapshot import canonical
 
 MATCH_A = 0.2
@@ -285,26 +285,46 @@ Registry watermark: '''+str(meta['source_publication_watermark'])+'''. This data
     (folder/'README.md').write_text(text,encoding='utf8')
 
 
-def _prepare_diag_lookup(root,case):
-    rows_by=defaultdict(list)
-    with gzip.open(root/'diagnostic_saddles.jsonl.gz','rt',encoding='utf8') as f:
-        for line in f:
+def _prepare_diag_lookups(root,cases,progress=None):
+    """Load the diagnostic gzip once per batch, retaining exact start scope.
+
+    A record lacking starts stays unresolved rather than borrowing a start
+    from its parent structure. The all-saddles gzip is never globally matched.
+    """
+    lookups={c['case_id']:defaultdict(list) for c in cases}
+    by_structure=defaultdict(list)
+    for case in cases:by_structure[case['structure_id']].append(case)
+    total=0
+    try:
+        metadata=json.loads((Path(root)/'private_manifest.json').read_text())
+        total=sum(metadata['diagnostic_saddle_status_counts'].values())
+    except (KeyError,ValueError,TypeError,FileNotFoundError):
+        pass
+    if progress:progress('diagnostic_index',0,total)
+    with gzip.open(Path(root)/'diagnostic_saddles.jsonl.gz','rt',encoding='utf8') as f:
+        for i,line in enumerate(f,1):
             item=json.loads(line)
-            if item['structure_id']!=case['structure_id']:continue
-            starts=item.get('starting_minimum_ids') or []
-            # We refuse to transfer a diagnostic saddle between explicitly
-            # incompatible starts. Empty provenance can be reported only as
-            # unresolved (not penalized).
-            item['start_known']=bool(starts)
-            if starts and case['starting_minimum_id'] not in starts:continue
-            rows_by[tuple(item['geometry']['numbers'])].append(item)
-    return rows_by
+            affected=by_structure.get(item['structure_id'],())
+            if affected:
+                starts=item.get('starting_minimum_ids') or []
+                item['start_known']=bool(starts)
+                key=tuple(item['geometry']['numbers'])
+                for case in affected:
+                    if not starts or case['starting_minimum_id'] in starts:
+                        lookups[case['case_id']][key].append(item)
+            if progress and i%4096==0:progress('diagnostic_index',i,total or i)
+    if progress:progress('diagnostic_index',i if 'i' in locals() else 0,total or (i if 'i' in locals() else 0))
+    return lookups
+
+def _prepare_diag_lookup(root,case,progress=None):
+    return _prepare_diag_lookups(root,[case],progress)[case['case_id']]
 
 
 def diagnose(matched, prediction, lookup):
     if matched['status']!='NO_MATCH':return {**matched,'diagnostic':'ELIGIBLE_REFERENCE_'+matched['status'],'penalty_key':None}
     candidates=[]; uncomparable=0
     for item in lookup.get(tuple(prediction['geometry']['numbers']),[]):
+        if cannot_match_by_anchor(prediction['geometry'],item['geometry'],MATCH_A):continue
         try:d=core_drift_maxdev(prediction['geometry'],item['geometry'])
         except ValueError:uncomparable+=1;continue
         if d<=MATCH_A+1e-12:candidates.append(item)
@@ -342,7 +362,7 @@ def diagnose(matched, prediction, lookup):
             'penalty_key':penalty_key}
 
 
-def grade_case(public,private,case_id,submission,seconds):
+def grade_case(public,private,case_id,submission,seconds,progress=None,diagnostic_lookup=None,prepared_reference=None):
     pub=Path(public);priv=Path(private)
     with (pub/'cases.csv').open(newline='',encoding='utf8') as f:
         cases={r['case_id']:r for r in csv.DictReader(f)}
@@ -354,14 +374,18 @@ def grade_case(public,private,case_id,submission,seconds):
     # User-provided scope arguments override missing .traj tags, but never
     # silently contradict explicit tags in the trajectory.
     raw=rm.score(ref,submission,seconds,start=case['starting_minimum_id'],
-                 parent=case['structure_id'],pes=case['pes_id'])
+                 parent=case['structure_id'],pes=case['pes_id'],progress=progress,
+                 prepared_reference=prepared_reference)
     preds=rm.read_submissions(submission,start=case['starting_minimum_id'],parent=case['structure_id'],pes=case['pes_id'])
-    lookup=_prepare_diag_lookup(priv,case)
+    lookup=diagnostic_lookup if diagnostic_lookup is not None else _prepare_diag_lookup(priv,case,progress)
     results=[];bad=set()
-    for matched,pred in zip(raw['submissions'],preds):
+    if progress:progress('diagnostic',0,len(preds))
+    for progress_i,(matched,pred) in enumerate(zip(raw['submissions'],preds),1):
         d=diagnose(matched,pred,lookup)
         if d.get('penalty_key'):bad.add(d['penalty_key'])
         results.append(d)
+        if progress and (progress_i%10==0 or progress_i==len(preds)):
+            progress('diagnostic',progress_i,len(preds))
     k=int(case['known_reaction_count']);u=int(raw['eligible_unique_count'])
     if u>k:raise ValueError('CREDIT_EXCEEDS_CASE_K')
     return {'schema_version':'saddlebench-prototype-graded-v1','case_id':case_id,
@@ -376,30 +400,47 @@ def grade_case(public,private,case_id,submission,seconds):
 
 
 
-def grade_batch(public,private,submission_csv):
+def grade_batch(public,private,submission_csv,progress=None):
     source=Path(submission_csv)
     results=[];seen=set()
     with source.open(newline='',encoding='utf8') as f:
         reader=csv.DictReader(f)
         if not {'case_id','trajectory','elapsed_seconds'}.issubset(reader.fieldnames or []):
             raise ValueError('SUBMISSION_CSV_COLUMNS_REQUIRED')
-        for row in reader:
-            cid=str(row['case_id'])
-            if cid in seen:raise ValueError('DUPLICATE_SUBMITTED_CASE:'+cid)
-            seen.add(cid)
-            traj=Path(row['trajectory'])
-            if not traj.is_absolute():traj=source.parent/traj
-            if traj.is_symlink() or not traj.is_file():raise ValueError('UNSAFE_OR_MISSING_TRAJECTORY:'+cid)
-            sec=float(row['elapsed_seconds'])
-            results.append(grade_case(public,private,cid,traj,sec))
-    if not results:raise ValueError('EMPTY_SUBMISSION_CSV')
+        submitted=list(reader)
+    if not submitted:raise ValueError('EMPTY_SUBMISSION_CSV')
+    with (Path(public)/'cases.csv').open(newline='',encoding='utf8') as f:
+        available={r['case_id']:r for r in csv.DictReader(f)}
+    targets=[]
+    for row in submitted:
+        cid=str(row['case_id'])
+        if cid in seen:raise ValueError('DUPLICATE_SUBMITTED_CASE:'+cid)
+        seen.add(cid)
+        if cid not in available:raise ValueError('UNKNOWN_CASE_ID')
+        targets.append(available[cid])
+    # Verify and load the complete eligible reference once for the entire batch.
+    if progress:progress('batch','eligible_reference_load',0,1)
+    prepared_reference=rm.load_reference(Path(private)/'reference')
+    if progress:progress('batch','eligible_reference_load',1,1)
+    # One gzip scan for the full batch, rather than decompressing for each case.
+    lookups=_prepare_diag_lookups(private,targets,
+        (lambda phase,done,total:progress('batch',phase,done,total)) if progress else None)
+    for row in submitted:
+        cid=str(row['case_id'])
+        traj=Path(row['trajectory'])
+        if not traj.is_absolute():traj=source.parent/traj
+        if traj.is_symlink() or not traj.is_file():raise ValueError('UNSAFE_OR_MISSING_TRAJECTORY:'+cid)
+        sec=float(row['elapsed_seconds'])
+        cb=(lambda phase,done,total,cid=cid: progress(cid,phase,done,total)) if progress else None
+        results.append(grade_case(public,private,cid,traj,sec,progress=cb,
+                                  diagnostic_lookup=lookups[cid],
+                                  prepared_reference=prepared_reference))
     k=sum(x['known_eligible_reactions_K'] for x in results)
     u=sum(x['unique_reactions_U'] for x in results)
     b=sum(x['known_bad_unique_B'] for x in results)
     t=sum(x['self_reported_elapsed_seconds'] for x in results)
     scored=[x['coverage'] for x in results if x['coverage'] is not None]
-    with (Path(public)/'cases.csv').open(newline='',encoding='utf8') as f:
-        full=sum(1 for _ in csv.DictReader(f))
+    full=len(available)
     return {'schema_version':'saddlebench-prototype-batch-v1',
             'selected_cases':len(results),'available_cases':full,
             'aggregate':{'reference_known_K':k,'unique_credited_U':u,'known_bad_unique_B':b,
