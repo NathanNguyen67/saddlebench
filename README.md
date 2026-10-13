@@ -1,10 +1,15 @@
 # SaddleBench — open-source prototype scorer
 
-**Source code is public; scoring reference data are PRIVATE.** This repository does
-not contain any reference saddle geometries, DoubleMin reaction identities or
-private diagnostic catalog. It uses the frozen published-registry reference hosted
-privately at `traingletrain/saddlebench-reference-private` (HF dataset), and
-public starting minima at https://huggingface.co/datasets/traingletrain/saddlebench-prototype.
+**Both the source code and frozen scoring reference are public.** This GitHub
+repository contains code and synthetic fixtures, not the 73,839 real saddle
+geometries. The registered reference is downloadable anonymously from
+https://huggingface.co/datasets/traingletrain/saddlebench-reference-private
+(the original repository name remains unchanged), and starting minima from
+https://huggingface.co/datasets/traingletrain/saddlebench-prototype.
+
+Publishing expected answers permits independent CPU scoring without LS6, a token,
+or any Hugging Face account. It also permits benchmark answer lookup, so the
+prototype score is an open-reference metric, **not a blind leaderboard**.
 
 Prototype source baseline: SaddleBench RC9, registry watermark 7522,
 registered canonical registry SHA256 `e33f7ac55cec2bc208fd1bb4ee74d047224fa072a7a43be1effdb4891c495c88`.
@@ -40,37 +45,28 @@ explicit set of ASE constraints. Provide your predicted saddles as a readable AS
 and give actual elapsed seconds. The `pes_id` in the prototype remains an
 UNVERIFIED scope placeholder, so compare under a consistent calculator.
 
-## Official-style scoring with your *authorized* private reference
+## Run the public-reference scorer from any cluster (no login)
 
-First authenticate locally on your research cluster as the owner (never share a token):
-
-```bash
-hf auth login
-```
-
-Then:
+The two datasets can be downloaded anonymously. After a GPU saddle search,
+submit an ASE `.traj` file for a single case:
 
 ```bash
 python scripts/score_from_hf.py \
- --case-id case0001 \
- --submission ./predicted_saddles.traj \
- --elapsed-seconds 3600 \
- --output ./score_case0001.json
+  --case-id case0001 \
+  --submission ./predicted_saddles.traj \
+  --elapsed-seconds 3600 \
+  --output ./score_case0001.json
 ```
 
-This script downloads the public `cases.csv` and the private reference snapshot
-*only with authorization*; verifies SHA256, the frozen registry identity and
-private manifest; runs `saddlebench.prototype.release_mvp.grade_case` locally;
-then writes detailed JSON results. Use `--cache-dir /path/to/cache` to retain
-the private data between submissions. Running it will not upload predictions.
-Avoid placing the private HF cache in a shared or publicly readable directory.
+The command downloads the public `cases.csv` and the public frozen reference,
+verifies SHA256 and registry provenance, performs CPU-only local scoring,
+and writes JSON. It never uploads predictions. Subsequent runs reuse the cache
+(`--cache-dir /path/to/cache`). The original `private_manifest.json` filename
+is retained for compatibility; **the dataset is now public**.
 
-For multiple selected cases, supply `--submission-csv file.csv` instead of
-`--case-id/--submission/--elapsed-seconds` and see the included
-`docs/SUBMISSION_FORMAT.md`. Scoring a private reference requires a HF token
-that grants read access to that dataset. **Ordinary public users do not have
-that access yet.** A trusted hosted submission service is a future requirement
-for fully public self-service scores.
+For multiple cases, use `--submission-csv file.csv` instead of
+`--case-id/--submission/--elapsed-seconds` (see `docs/SUBMISSION_FORMAT.md`).
+An online scoring service is optional, not required for local scoring.
 
 ## Scoring definition (prototype)
 
@@ -94,13 +90,13 @@ trusted public leaderboard. PES identity has not been independently verified.
 
 1. Use a GPU to search from a chosen `caseNNNN.traj` using the intended PES.
 2. Save predictions to `predicted_saddles.traj` with compatible ASE metadata.
-3. Run the scorer above (CPU only). It downloads private data on first use.
+3. Run the scorer above (CPU only). It downloads public reference data on first use.
 4. Confirm the JSON includes reaction credit, duplicate handling, higher-order,
    high-barrier, unknown/ambiguous and coverage/score categories as applicable.
 5. For a genuine end-to-end test, report the method/PES, GPU model, runtime,
-   case ID, prediction count and scored JSON; do not share the HF token.
+   case ID, prediction count and scored JSON. No HF token is required.
 
-Repository: https://github.com/NathanNguyen67/saddlebench (once published).
+Repository: https://github.com/NathanNguyen67/saddlebench.
 
 This project is independently packaged from standalone SaddleMill and does not
 modify SaddleMill, Benchmark or the production registry.

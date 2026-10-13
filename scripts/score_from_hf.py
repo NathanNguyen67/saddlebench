@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Authenticated, CPU-only cross-cluster scorer; does not upload predictions."""
+"""Public-reference, CPU-only cross-cluster scorer; does not upload predictions."""
 import argparse
 import csv
 import hashlib
@@ -10,7 +10,7 @@ import shutil
 import tempfile
 
 PUBLIC='traingletrain/saddlebench-prototype'
-PRIVATE='traingletrain/saddlebench-reference-private'
+REFERENCE='traingletrain/saddlebench-reference-private'
 REGISTRY_SHA='e33f7ac55cec2bc208fd1bb4ee74d047224fa072a7a43be1effdb4891c495c88'
 
 def digest(p):
@@ -32,7 +32,7 @@ def verify_reference(root, cases_path):
         raise RuntimeError('REFERENCE_COUNTS_MISMATCH')
     for path,sha in hashes.items():
         if not isinstance(sha,str) or len(sha)!=64 or not (root/path).is_file() or digest(root/path)!=sha:
-            raise RuntimeError('PRIVATE_REFERENCE_CHECKSUM_FAILED:'+str(path))
+            raise RuntimeError('REFERENCE_CHECKSUM_FAILED:'+str(path))
     if digest(root/'reference/reference.jsonl')!=refmeta['reference_sha256']:
         raise RuntimeError('REACTION_REFERENCE_HASH_MISMATCH')
     with Path(cases_path).open(newline='',encoding='utf8') as f:
@@ -49,7 +49,7 @@ def main():
     a.add_argument('--submission',help='predicted saddles as ASE .traj')
     a.add_argument('--elapsed-seconds',type=float)
     a.add_argument('--output',required=True)
-    a.add_argument('--cache-dir',default=str(Path.home()/'.cache/saddlebench_private'))
+    a.add_argument('--cache-dir',default=str(Path.home()/'.cache/saddlebench_reference'))
     a=a.parse_args()
     if a.case_id and (not a.submission or a.elapsed_seconds is None):
         raise SystemExit('SINGLE_CASE_REQUIRES_SUBMISSION_AND_ELAPSED_SECONDS')
@@ -60,16 +60,16 @@ def main():
     os.umask(0o077)
     cache=Path(a.cache_dir).expanduser().absolute()
     for d in (cache,*cache.parents):
-        if d.is_symlink():raise SystemExit('SYMLINK_IN_PRIVATE_CACHE_PATH')
+        if d.is_symlink():raise SystemExit('SYMLINK_IN_REFERENCE_CACHE_PATH')
     cache.mkdir(parents=True,exist_ok=True,mode=0o700)
     cache.chmod(0o700)
     from huggingface_hub import snapshot_download, hf_hub_download
     try:
-        ref=snapshot_download(repo_id=PRIVATE,repo_type='dataset',cache_dir=str(cache),
+        ref=snapshot_download(repo_id=REFERENCE,repo_type='dataset',cache_dir=str(cache),token=False,
             allow_patterns=['private_manifest.json','reference/*','diagnostic_saddles.jsonl.gz','CHECKSUMS.json'])
     except Exception as e:
-        raise SystemExit('PRIVATE_HF_DOWNLOAD_DENIED_OR_FAILED: authenticate as owner with `hf auth login`; '+type(e).__name__)
-    casefile=hf_hub_download(repo_id=PUBLIC,repo_type='dataset',filename='cases.csv',cache_dir=str(cache))
+        raise SystemExit('PUBLIC_HF_REFERENCE_UNAVAILABLE: verify reference dataset visibility and network; '+type(e).__name__)
+    casefile=hf_hub_download(repo_id=PUBLIC,repo_type='dataset',filename='cases.csv',cache_dir=str(cache),token=False)
     verify_reference(ref,casefile)
     from saddlebench.prototype.release_mvp import grade_case, grade_batch
     with tempfile.TemporaryDirectory(prefix='saddlebench_score_') as tmp:
@@ -82,7 +82,7 @@ def main():
         json.dump(result,f,indent=2,sort_keys=True);f.write('\n')
     print('SCORE_VERIFY=PASS')
     print('OUTPUT='+str(out))
-    print('PRIVATE_REFERENCE_USED_LOCALLY=YES')
+    print('REFERENCE_ACCESS=PUBLIC_ANONYMOUS')
     if a.case_id:
         print('COVERAGE='+str(result['coverage']))
         print('PROVISIONAL_SCORE_PER_HOUR='+str(result['provisional_score_per_hour']))
