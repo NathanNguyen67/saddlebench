@@ -27,7 +27,23 @@ def test_deterministic_export(refs,tmp_path):
     assert (refs.path/'records.jsonl').read_bytes()==(more/'records.jsonl').read_bytes()
     assert (refs.path/'manifest.json').read_bytes()==(more/'manifest.json').read_bytes()
 
-def test_constraint_unknown_is_not_eligible(refs):
-    rec=copy.deepcopy(refs.records[0]);rec['geometry']['constraints_known']=False
+def test_constraint_unknown_does_not_block_geometry_match_or_credit(refs):
+    from dataclasses import replace
     from saddlebench.matching.matcher import match
-    assert match({'geometry':rec['geometry']},refs)['state']=='NOT_IN_REFERENCE'
+    from saddlebench.scoring.engine import score, classify
+    from examples.generate_fixture import geom
+    rows=list(copy.deepcopy(refs.records))
+    for rec in rows:
+        rec['geometry']['constraints_known']=False
+        rec['geometry']['fixed_indices']=[]
+    by_numbers={}
+    for rec in rows:
+        by_numbers.setdefault(tuple(rec['geometry']['numbers']),[]).append(rec)
+    changed=replace(refs,records=tuple(rows),by_numbers={k:tuple(v) for k,v in by_numbers.items()})
+    sub={'geometry':geom(0),'submission_id':'no-fixatoms',
+         'starting_minimum_id':'min-A','pes_id':'PES-A','parent_structure_id':'parent-A'}
+    assert match(sub,changed)['state']=='UNIQUE_REFERENCE_MATCH'
+    r=score([sub],changed,3600)
+    assert r['eligible_unique_count']==1
+    candidate=next(x for x in rows if x['reference_id']=='a')
+    assert classify(candidate,'min-A','PES-A','parent-A')['eligible'] is True

@@ -25,12 +25,24 @@ def test_core_median_tie_half():
 def test_complete_link_not_single_link():
     assert complete_link_diameter([geom(0),geom(.08),geom(.16)])==pytest.approx(.16)
 
-def test_order_pbc_cell_fixed_constraints():
+def test_order_pbc_cell_still_rejected():
     a=geom(0);b=copy.deepcopy(a)
-    for changed in [dict(numbers=[6,1,8]),dict(pbc=[True,False,False]),dict(fixed_indices=[0]),
-                    dict(constraints_known=False),dict(cell_angstrom=[[10.051,0,0],[0,10,0],[0,0,10]])]:
+    for changed in [dict(numbers=[6,1,8]),dict(pbc=[True,False,False]),
+                    dict(cell_angstrom=[[10.051,0,0],[0,10,0],[0,0,10]])]:
         b=copy.deepcopy(a);b.update(changed)
         with pytest.raises(ValueError):core_drift_maxdev(a,b)
+
+def test_constraints_are_provenance_not_geometric_identity():
+    a=geom(0)
+    for changed in [dict(fixed_indices=[0]), dict(constraints_known=False),
+                    dict(fixed_indices=[1],constraints_known=True)]:
+        b=copy.deepcopy(a);b.update(changed)
+        assert core_drift_maxdev(a,b)==pytest.approx(0.0)
+        assert core_drift_maxdev(b,a)==pytest.approx(0.0)
+    b=geom(0.2);b['constraints_known']=False
+    assert core_drift_maxdev(a,b)==pytest.approx(0.2)
+    b=geom(0.2001);b['fixed_indices']=[0]
+    assert core_drift_maxdev(a,b)>0.2
 
 def test_matches_all_ambiguous(refs):
     s={'geometry':geom(18.15)}

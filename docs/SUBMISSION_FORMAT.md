@@ -8,7 +8,7 @@ Provide a readable trajectory with:
 
 - The same ordered atomic numbers as the selected starting minimum.
 - Compatible simulation cell and periodic boundary conditions.
-- Consistent fixed-atom constraints represented by ASE `FixAtoms`, where applicable.
+- Fixed-atom constraints may be included as metadata but are not required for predicted saddle frames.
 - One frame per candidate; multiple frames and repeated geometries are accepted, but duplicates do not earn additional credit.
 
 Use the case ID from the public `cases.csv` and specify the total elapsed search time, including unsuccessful attempts:
@@ -21,7 +21,7 @@ python scripts/score_from_hf.py \
   --output score.json
 ```
 
-Case scope is supplied using `--case-id`. Explicit trajectory metadata must not contradict the case's starting minimum, structure identifier or PES label. Keep atom indexing, cell and constraints consistent with the input. Record the calculator/model and computational hardware alongside the results for reproducibility.
+Case scope is supplied using `--case-id`. Explicit trajectory metadata must not contradict the case's starting minimum, structure identifier or PES label. Preserve atom indexing, cell and periodicity. Starting minima retain their fixed-atom constraints for Search, but repackaged saddle trajectories need not carry those constraints. Record the calculator/model and computational hardware alongside the results for reproducibility.
 
 ## Multi-case submission
 
@@ -47,6 +47,6 @@ Trajectory paths may be absolute or relative to the CSV's directory. A case shou
 
 The reference matching threshold is core-drift maxdev **≤ 0.2 Å**; topology is not used for identity. Reference reaction eligibility requires saddle force maximum ≤ 0.005 eV/Å, DoubleMin endpoint force maxima ≤ 0.0025 eV/Å, a connected reaction and a barrier < 1.5 eV. These tests apply to stored reference evidence; submission scoring does not independently certify a candidate saddle or repeat endpoint minimizations.
 
-A match requires compatible fixed-atom metadata. Currently, some reference saddle geometries lack verified constraint metadata. In such cases a candidate may receive `NO_MATCH` because the reference comparison was blocked, not because the predicted coordinates differ. Reports for affected cases should not be interpreted as definitive coverage measurements until that reference issue is corrected.
+Fixed-atom constraint metadata is not a requirement for saddle matching. The original prototype rejected reference geometries with unknown constraint metadata, so earlier scores and `NO_MATCH` diagnostics may be invalid and should be recomputed with the revised matcher. Geometry matching still requires compatible ordered atoms, PBC and cell, and follows the published case scope. This policy change does not certify the reference PES or validate the completeness of eligible reactions.
 
 The input and reference datasets are public. The scoring program downloads the reference without authentication; predictions remain local. The open-reference prototype is not a blind evaluation service.

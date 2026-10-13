@@ -194,7 +194,7 @@ def build(directory,destination,mode='all_saddles',pes_id='UNVERIFIED_OPERATOR_P
         'limitations':['Registry-derived trust; native science not independently recertified.',
              'Only observations with measured endpoint forces qualify; absent optimizer status is recorded separately.',
              'Source PES identity not independently established; operator-defined scope.',
-             'Unknown source constraints are retained and may block strict matching.',
+             'Unknown source constraints are retained as provenance, not used for geometric matching.',
              'Only recorded registry reactions, not raw unpublished Search evidence.'],
         'counts':dict(stats)})+'\n'
     with AtomicDirectory(out,protected_roots=(source,),create_parents=True) as writer:
@@ -205,7 +205,7 @@ def build(directory,destination,mode='all_saddles',pes_id='UNVERIFIED_OPERATOR_P
     return dict(stats)
 
 def _compare(a,b):
-    # Preserve the existing strict geometry matcher, including constraint checks.
+    # Compare geometry only. Constraint provenance is retained but not a matching gate.
     return core_drift_maxdev(a,b)
 
 def load_reference(reference):

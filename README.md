@@ -37,7 +37,7 @@ hf download traingletrain/saddlebench-prototype minima/case0001.traj \
   --repo-type dataset --local-dir inputs
 ```
 
-Run a saddle-search method from the selected structure and save the proposed saddle geometries to an ASE `.traj` file, with one frame per candidate. Preserve atomic ordering, periodic cell and fixed-atom constraints.
+Run a saddle-search method from the selected structure and save the proposed saddle geometries to an ASE `.traj` file, with one frame per candidate. Preserve atomic ordering, cell and periodic boundary conditions. The supplied minimum retains its constraints for the search; constraints on the output saddle frames are optional and are not used in matching.
 
 Score the candidate geometries:
 
@@ -79,11 +79,11 @@ score = 100 * (U / K)^2 * (U / (U + 2*B)) / T
 
 The published reference uses a saddle force threshold of **0.005 eV/Å**, DoubleMin endpoint thresholds of **0.0025 eV/Å** for each endpoint, a connected-reaction requirement and a barrier **strictly below 1.5 eV**. Its `all_saddles` mode admits eligible historical DoubleMin protocols; it does not award credit for every first-order saddle in the registry.
 
-Matching uses core-drift **maxdev ≤ 0.2 Å**, with compatible atom ordering, cell, periodic boundary conditions, fixed-atom metadata and case scope. It does not use connectivity topology to declare geometric identity. These eligibility criteria are evaluated from stored reference evidence; the scorer does not rerun optimizations or Hessian calculations.
+Matching uses core-drift **maxdev ≤ 0.2 Å**, with compatible atom ordering, cell, periodic boundary conditions and case scope. Fixed-atom constraint metadata is retained when present but does not affect saddle matching or credit. This is a change from the original prototype constraint-gated matching policy; scores produced by the two policies should not be compared without rescoring. Connectivity topology is not used to declare geometric identity. The scorer does not rerun optimizations or Hessian calculations.
 
 ## Reference limitations
 
-**Constraint metadata.** Some published saddle geometries have unknown fixed-atom constraints and cannot be compared by the current strict matcher. In a read-only audit, `case0006` had 1,243 such reference saddle members and `case0022` had 2,196. Neither case had any comparable candidate-reference pairs in that audit. Consequently, a `NO_MATCH` or `UNKNOWN_UNMATCHED` result for affected cases must not be interpreted as evidence of geometric disagreement. The reference requires provenance repair before reliable coverage can be reported for those cases.
+**Constraint metadata and score versions.** The published reference includes saddle geometries whose fixed-atom metadata is unknown. The original scorer rejected those comparisons, causing some zero-match reports without any geometric distance evaluation. The current matcher ignores constraint metadata *for saddle-to-saddle comparison only*; original results should be rescored. Starting minima preserve their verified constraints, and their use during Search remains the search method's responsibility. This matching-policy update does not verify unknown calculator/PES provenance or make the published reference exhaustive.
 
 **Coverage.** The reference consists of registered observations, not an exhaustive enumeration of possible saddles. An unknown candidate is not automatically incorrect.
 

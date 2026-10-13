@@ -48,13 +48,12 @@ def _mic(displacements,cell,pbc):
 def core_drift_maxdev(a,b):
     """Canonical: MIC -> <= median magnitude core -> subtract core mean -> MIC -> max norm.
 
-    Strict input validation and conservative geometry noncomparability are handled by matcher.
+    Fixed-atom constraints are recorded as metadata but do not enter geometric identity.
+    Atom ordering, periodicity and cell compatibility remain mandatory.
     """
     validate_geometry(a);validate_geometry(b)
     if a['numbers']!=b['numbers']:raise ValueError('INCOMPATIBLE_ATOM_ORDER')
     if a['pbc']!=b['pbc']:raise ValueError('INCOMPATIBLE_PBC')
-    if not a['constraints_known'] or not b['constraints_known']:raise ValueError('UNKNOWN_CONSTRAINTS')
-    if a['fixed_indices']!=b['fixed_indices']:raise ValueError('INCOMPATIBLE_CONSTRAINTS')
     ca=np.asarray(a['cell_angstrom'],dtype=float)
     cb=np.asarray(b['cell_angstrom'],dtype=float)
     if np.max(np.abs(ca-cb))>0.05:raise ValueError('INCOMPATIBLE_CELL')

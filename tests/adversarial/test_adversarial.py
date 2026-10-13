@@ -24,7 +24,9 @@ def test_reference_only_positive_malformed_evidence(refs):
     from saddlebench.scoring.engine import classify
     assert classify(a,'min-A','PES-A','parent-A')['connection_state']=='UNKNOWN'
 
-def test_cell_skew_and_constraint_unknown_no_implicit_equivalence():
+def test_constraint_unknown_no_longer_blocks_but_cell_still_does():
     a=geom(0);b=copy.deepcopy(a)
     b['constraints_known']=False
-    with pytest.raises(ValueError,match='UNKNOWN_CONSTRAINTS'):core_drift_maxdev(a,b)
+    assert core_drift_maxdev(a,b)==pytest.approx(0.0)
+    b['cell_angstrom'][0][0]+=0.051
+    with pytest.raises(ValueError,match='INCOMPATIBLE_CELL'):core_drift_maxdev(a,b)

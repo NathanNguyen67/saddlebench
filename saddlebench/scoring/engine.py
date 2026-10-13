@@ -106,7 +106,6 @@ def classify(r,start,pes,parent,watermark=None,cutoff=None):
     if r['starting_minimum_id']!=start:reasons.append('REFERENCE_START_SCOPE_MISMATCH')
     eligible=(event_valid and (delta is None or delta>=0) and not r.get('uncertainty_reasons')
               and fo=='CERTIFIED_FO' and barrier=='BELOW_1P5' and conn=='CONNECTED_TO_START' and prov=='CANONICAL'
-              and r['geometry']['constraints_known'] is True
               and r['starting_minimum_id']==start and r['pes_id']==pes and r['parent_structure_id']==parent)
     return {'fo_state':fo,'barrier_state':barrier,'connection_state':conn,'provenance_state':prov,
             'barrier_ev':delta,'eligible':eligible,'reason_codes':sorted(set(reasons))}
