@@ -10,6 +10,21 @@ def _mic(displacements,cell,pbc):
     periodic=np.asarray(pbc,dtype=bool)
     if not periodic.any():return arr.copy()
     basis=np.asarray(cell,dtype=float)[periodic].T
+    # Orthogonal periodic cells admit an exact component-wise nearest-lattice
+    # calculation.  Avoid per-atom QR sphere decoding for this common case.
+    # Nonorthogonal, degenerate, near-half-cell, and numerically extreme inputs
+    # still use the original bounded sphere decoder below.
+    gram=basis.T@basis
+    lensq=np.diag(gram)
+    offdiag=gram-np.diag(lensq)
+    if (np.all(lensq>1e-20) and
+            np.all(np.abs(offdiag)<=1e-14*np.sqrt(np.outer(lensq,lensq)))):
+        fractional=(arr@basis)/lensq
+        nearest=np.rint(fractional)
+        # On a Voronoi boundary, the legacy decoder's tie resolution is kept.
+        if (np.all(np.abs(fractional)<1e6) and
+                not np.any(np.abs(np.abs(fractional-nearest)-0.5)<1e-9)):
+            return arr-nearest@basis.T
     q,r=np.linalg.qr(basis,mode='reduced')
     if len(periodic[periodic]) and any(abs(r[i,i])<1e-11 for i in range(r.shape[0])):
         raise ValueError('DEGENERATE_PERIODIC_CELL')

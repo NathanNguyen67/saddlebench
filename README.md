@@ -9,11 +9,11 @@ This is an **open-reference research prototype**. The reference data and scoring
 | Dataset | Description |
 | --- | --- |
 | [Starting minima](https://huggingface.co/datasets/traingletrain/saddlebench-prototype) | 123 starting structures in ASE trajectory format, case metadata, and submission examples. |
-| [Scoring reference](https://huggingface.co/datasets/traingletrain/saddlebench-reference-private) | 2,231 eligible reference reaction identities and a diagnostic catalog of 73,839 registered saddles. |
+| [Scoring reference](https://huggingface.co/datasets/traingletrain/saddlebench-reference-private) | 2,387 eligible reference reaction identities and a diagnostic catalog of 83,529 registered saddles. |
 
 Both datasets are public. The `-private` suffix is part of the reference dataset's original name; authentication is not required.
 
-The released reference corresponds to registry publication watermark **7,522** and registry SHA-256 `e33f7ac55cec2bc208fd1bb4ee74d047224fa072a7a43be1effdb4891c495c88`. These counts describe this snapshot only, not any later registry publication.
+The released reference corresponds to registry publication watermark **23,134** and registry SHA-256 `85d37e55448b544473b34e7bb244823e80ddc85091bbe6ae3e771c7beb4b0a41`. These counts describe this snapshot only, not any later registry publication.
 
 ## Installation
 
@@ -99,3 +99,9 @@ python -m pytest -q
 ```
 
 The test fixtures exercise software behavior; they do not establish scientific completeness of the reference.
+
+## Saddle-group population metadata
+
+For each geometrically matched candidate, `entries[].matched_saddle_groups` lists any matching registered saddle groups and their `registered_saddle_count`. The count is the number of distinct canonical saddle IDs in the full published `saddles.jsonl` for that structure/group, including saddles ineligible for reaction credit. It is not the count of discovered predictions, supporting reference geometries, reactions, or eligible observations. When a prediction geometrically matches multiple groups, they are listed separately. A `null` count indicates historical reference data without a complete recorded population. This metadata does not affect credit or penalties.
+
+All 123 published starting minima are verified to retain their original fixed-atom constraints after an ASE trajectory round trip. The reference is at publication watermark 23,134.

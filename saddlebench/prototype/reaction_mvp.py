@@ -92,6 +92,12 @@ def build(directory,destination,mode='all_saddles',pes_id='UNVERIFIED_OPERATOR_P
     for m in rows(source,'minima.jsonl'):
         minimum_by_parent[m['parent_structure_id']].append(m)
     saddles={s['canonical_saddle_id']:s for s in rows(source,'saddles.jsonl')}
+    # Full registered saddle-group population; not the eligible reaction-member count.
+    group_ids=defaultdict(set)
+    for saddle in saddles.values():
+        if saddle.get('saddle_group_id') is not None:
+            group_ids[(saddle['structure_id'],saddle['saddle_group_id'])].add(saddle['canonical_saddle_id'])
+    group_size={k:len(v) for k,v in group_ids.items()}
     reaction={r['canonical_reaction_id']:r for r in rows(source,'reactions.jsonl')}
     candidates=defaultdict(list); required_geoms=set()
     for obs in rows(source,'doublemin_observations.jsonl'):
@@ -151,6 +157,7 @@ def build(directory,destination,mode='all_saddles',pes_id='UNVERIFIED_OPERATOR_P
             if key in seen:continue
             seen.add(key)
             members.append({'canonical_saddle_id':key,'saddle_group_id':s['saddle_group_id'],
+                            'registered_saddle_group_size':group_size[(s['structure_id'],s['saddle_group_id'])],
                             'geometry':geo,'constraints_metadata_verified':g['constraints_known'] is True,
                             'saddle_fmax_eV_A':s['source_columns']['saddle_fmax_eV_A']})
         if not members:continue
@@ -260,11 +267,18 @@ def score(reference,submission,elapsed_seconds,start=None,pes=None,parent=None):
     credited=set(); results=[];scope_counts=defaultdict(Counter)
     for sub in submissions:
         scope=(sub['parent_structure_id'],sub['starting_minimum_id'],sub['pes_id'])
-        ids=set(); errors=set()
+        ids=set(); errors=set(); matched_groups={}
         for r,m in by_scope.get((*scope,tuple(sub['geometry']['numbers'])),[]):
             try:d=_compare(sub['geometry'],m['geometry'])
             except ValueError as e:errors.add(str(e));continue
-            if d<=0.2+1e-12:ids.add(r['reaction_id'])
+            if d<=0.2+1e-12:
+                ids.add(r['reaction_id'])
+                gid=m.get('saddle_group_id')
+                if gid is not None:
+                    size=m.get('registered_saddle_group_size')
+                    if gid in matched_groups and matched_groups[gid]!=size:
+                        raise ValueError('CONFLICTING_REGISTERED_SADDLE_GROUP_SIZE')
+                    matched_groups[gid]=size
         if len(ids)>1: status='AMBIGUOUS'; target=None
         elif not ids:status='NO_MATCH';target=None
         else:
@@ -276,7 +290,10 @@ def score(reference,submission,elapsed_seconds,start=None,pes=None,parent=None):
         results.append({'submission_id':sub['submission_id'],'parent_structure_id':scope[0],
                         'starting_minimum_id':scope[1],'pes_id':scope[2],
                         'status':status,'matched_reaction_id':target,
-                        'matching_reaction_ids':sorted(ids),'incompatibilities':sorted(errors)})
+                        'matching_reaction_ids':sorted(ids),'incompatibilities':sorted(errors),
+                        'matched_saddle_groups':[{'saddle_group_id':gid,
+                            'registered_saddle_count':matched_groups[gid]}
+                            for gid in sorted(matched_groups)]})
     return {'schema_version':'saddlebench-reaction-prototype-score-v1','mode':manifest['mode'],
             'registry_sha256':manifest['registry_sha256'],'reference_sha256':manifest['reference_sha256'],
             'elapsed_seconds':elapsed_seconds,'eligible_unique_count':len(credited),

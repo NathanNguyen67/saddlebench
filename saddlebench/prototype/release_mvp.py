@@ -181,6 +181,10 @@ def stage(evidence, reference, inputs, output):
         if sha(private/'private'/'reference'/'reference.jsonl')!=rman['reference_sha256']:
             raise ValueError('PRIVATE_REFERENCE_COPY_MISMATCH')
         saddles=list(rm.rows(src,'saddles.jsonl'))
+        registered_groups=defaultdict(set)
+        for saddle in saddles:
+            if saddle.get('saddle_group_id') is not None:
+                registered_groups[(saddle['structure_id'],saddle['saddle_group_id'])].add(saddle['canonical_saddle_id'])
         saddle_id=set(s['canonical_saddle_id'] for s in saddles)
         group_of={s['canonical_saddle_id']:s for s in saddles}
         rx_by_id={r['canonical_reaction_id']:r for r in rm.rows(src,'reactions.jsonl')}
@@ -203,6 +207,9 @@ def stage(evidence, reference, inputs, output):
                 obsstart=s.get('observed_starting_minimum_ids') or []
                 line={'saddle_id':s['canonical_saddle_id'],'structure_id':s['structure_id'],
                       'starting_minimum_ids':obsstart,'saddle_group_id':s.get('saddle_group_id'),
+                      'registered_saddle_group_size':(
+                          len(registered_groups[(s['structure_id'],s['saddle_group_id'])])
+                          if s.get('saddle_group_id') is not None else None),
                       'hessian_status':s.get('hessian_status'),'diagnostic_kind':kind,
                       'geometry':{'numbers':g['ordered_numbers'],'positions_angstrom':g['positions_angstrom'],
                           'cell_angstrom':g['cell_angstrom'],'pbc':g['pbc'],
@@ -303,6 +310,17 @@ def diagnose(matched, prediction, lookup):
         if d<=MATCH_A+1e-12:candidates.append(item)
     if not candidates:
         return {**matched,'diagnostic':'UNKNOWN_UNMATCHED', 'uncomparable_sources':uncomparable,'penalty_key':None}
+    groups={}
+    for candidate in candidates:
+        gid=candidate.get('saddle_group_id')
+        if gid is not None:
+            size=candidate.get('registered_saddle_group_size')
+            if gid in groups and groups[gid]!=size:
+                raise ValueError('CONFLICTING_REGISTERED_SADDLE_GROUP_SIZE')
+            groups[gid]=size
+    matched={**matched,'matched_saddle_groups':[
+        {'saddle_group_id':gid,'registered_saddle_count':groups[gid]}
+        for gid in sorted(groups)]}
     # Only assign a penalty if all equally plausible identities have a known-bad
     # classification and the match is unambiguous at identity/group level.
     keys={str(c['saddle_group_id'] or c['saddle_id']) for c in candidates}

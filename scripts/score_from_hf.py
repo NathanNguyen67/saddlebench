@@ -11,7 +11,7 @@ import tempfile
 
 PUBLIC='traingletrain/saddlebench-prototype'
 REFERENCE='traingletrain/saddlebench-reference-private'
-REGISTRY_SHA='e33f7ac55cec2bc208fd1bb4ee74d047224fa072a7a43be1effdb4891c495c88'
+REGISTRY_SHA='85d37e55448b544473b34e7bb244823e80ddc85091bbe6ae3e771c7beb4b0a41'
 
 def digest(p):
     h=hashlib.sha256()
@@ -28,7 +28,7 @@ def verify_reference(root, cases_path):
         raise RuntimeError('REFERENCE_REGISTRY_SHA_MISMATCH')
     if private_meta.get('mode')!='all_saddles' or refmeta.get('mode')!='all_saddles':
         raise RuntimeError('REFERENCE_MODE_MISMATCH')
-    if private_meta.get('case_count')!=123 or refmeta.get('reference_count')!=2231:
+    if private_meta.get('case_count')!=123 or refmeta.get('reference_count')!=2387:
         raise RuntimeError('REFERENCE_COUNTS_MISMATCH')
     for path,sha in hashes.items():
         if not isinstance(sha,str) or len(sha)!=64 or not (root/path).is_file() or digest(root/path)!=sha:
