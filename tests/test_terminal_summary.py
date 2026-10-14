@@ -1,106 +1,140 @@
-"""Formatting-only tests; no calculator, network or reference data needed."""
-import copy
+"""CPU-only regression checks for SaddleBench table and model-labeled CSV."""
+import csv
+import importlib.util
+from pathlib import Path
+import re
+import tempfile
+import unittest
+
 from saddlebench.terminal_summary import render_summary
+from saddlebench import score_modes
 
 
-def case(mode="score_detailed", name="case0006"):
-    es = [
-        {"stage": "eligible", "status": "CREDIT", "category": "CONNECTED_RATE_RELEVANT_REACTION"},
-        {"stage": "eligible", "status": "DUPLICATE", "category": "CONNECTED_RATE_RELEVANT_REACTION"},
-        {"stage": "known_nonfo", "status": "NONFO_FIRST_HIT", "category": "KNOWN_NON_FIRST_ORDER"},
-        {"stage": "remaining_diagnostics", "status": "CATALOG_FIRST_HIT", "category": "KNOWN_CONNECTED_HIGH_BARRIER"},
-        {"stage": "remaining_diagnostics", "status": "CATALOG_FIRST_HIT", "category": "KNOWN_FIRST_ORDER_DISCONNECTED"},
-        {"stage": None, "status": "UNKNOWN_UNMATCHED", "category": None},
-    ]
-    return {"case_id": name, "mode": mode, "entries": es, "known_eligible_reactions_K": 4,
-            "greedy_unique_reactions_U": 1, "coverage": .25,
-            "self_reported_elapsed_seconds": 532., "provisional_score_per_hour": 1.2345,
-            "first_hit_potential_bad_groups_with_known_start": 2,
-            "canonical_known_bad_unique_B": None}
+def sample_case(model='SEL04 M24', case='case0006', score=120.5):
+    return {
+        'model': model, 'case_id': case, 'structure_id': 'oc20:test',
+        'starting_minimum_id': 'm0', 'known_eligible_reactions_K': 4,
+        'greedy_unique_reactions_U': 2, 'coverage': .5,
+        'self_reported_elapsed_seconds': 532., 'provisional_score_per_hour': score,
+        'first_hit_potential_bad_groups_with_known_start': 1,
+        'entries': [
+            {'stage': 'eligible', 'status': 'CREDIT'},
+            {'stage': 'eligible', 'status': 'DUPLICATE'},
+            {'stage': 'known_nonfo', 'category': 'KNOWN_NON_FIRST_ORDER', 'status': 'NONFO_FIRST_HIT'},
+            {'stage': 'remaining_diagnostics', 'category': 'KNOWN_FIRST_ORDER_DISCONNECTED', 'status': 'CATALOG_FIRST_HIT'},
+            {'stage': None, 'status': 'UNKNOWN_UNMATCHED'},
+        ]
+    }
 
 
-def test_single_detailed_prints_bad_and_neutral_separately():
-    report = case()
-    frozen = copy.deepcopy(report)
-    output = render_summary(report)
-    assert "case0006 | 6 predictions" in output
-    assert "Reaction coverage: 1/4" in output
-    assert "25.00%" in output
-    assert "Known non-first-order:     1 predictions" in output
-    assert "Known connected high barrier: 1 predictions" in output
-    assert "Potential bad first-hit matches: 2 predictions" in output
-    assert "KNOWN_FIRST_ORDER_DISCONNECTED: 1 predictions" in output
-    assert "No match in checked stages:   1 predictions" in output
-    assert "Potential bad groups, verified start (first-hit): 2" in output
-    assert "NOT canonical bad-reaction counts" in output
-    assert report == frozen
+class LeaderboardTests(unittest.TestCase):
+    def test_detailed_table_and_color_toggle(self):
+        with tempfile.TemporaryDirectory() as td:
+            cases = Path(td)/'cases.csv'
+            cases.write_text('case_id,structure_id,starting_minimum_id,exploration_confidence_heuristic\n'
+                             'case0006,oc20:test,m0,0.93\n')
+            a = sample_case()
+            b = sample_case('ForceBank-Fourier', score=180.9)
+            report = {'mode':'score_detailed', 'case_results':[a,b]}
+            text = render_summary(report, cases_csv=cases, color=False)
+            self.assertIn('SEL04 M24', text)
+            self.assertIn('ForceBank-Fourier', text)
+            self.assertIn('  93.0 ', text)
+            self.assertIn(' 180.90', text)
+            self.assertIn('S/H', text)
+            self.assertIn('NF', text)
+            self.assertIn('B', text)
+            self.assertIn('UNM', text)
+            self.assertNotIn('\x1b[', text)
+            painted = render_summary(report, cases_csv=cases, color=True)
+            self.assertIn('\x1b[', painted)
+            self.assertTrue(re.sub(r'\x1b\[[0-9;]*m', '', painted).startswith(text))
+            # No model-name escaping or width drift in ANSI-free output.
+            lines = [l for l in text.splitlines() if 'ForceBank-Fourier' in l or 'SEL04 M24' in l]
+            self.assertEqual(len(lines), 2)
+            self.assertLess(text.index('ForceBank-Fourier'), text.index('SEL04 M24'))
+
+    def test_coverage_and_score_dont_mislabel_unchecked_saddles(self):
+        for mode in ('coverage', 'score'):
+            report={'mode':mode,'case_results':[sample_case()]}
+            text=render_summary(report,color=False)
+            self.assertIn('UNM',text)
+            self.assertIn('NF',text)
+            self.assertIn('not evaluated' if mode=='coverage' else 'does not check HB/OTH',text)
+
+    def test_no_reference_confidence_on_mismatch_or_missing(self):
+        with tempfile.TemporaryDirectory() as td:
+            p=Path(td)/'cases.csv'
+            p.write_text('case_id,structure_id,starting_minimum_id,exploration_confidence_heuristic\n'
+                         'case0006,wrong,m0,0.99\n')
+            result=render_summary(sample_case(),cases_csv=p,color=False)
+            self.assertIn('   -',result)
+            self.assertNotIn('99.0',result)
+            self.assertIn('CONF%', render_summary(sample_case(), cases_csv=p.with_name('missing.csv')))
+
+    def test_per_model_totals_only_same_case_sets(self):
+        a=sample_case()
+        b=sample_case('another', score=88.0)
+        arms=[{'model':'SEL04 M24','case_ids':['case0006'], 'aggregate':score_modes._batch_report([a], 'score_detailed',123)['aggregate']},
+              {'model':'another','case_ids':['case0006'], 'aggregate':score_modes._batch_report([b], 'score_detailed',123)['aggregate']}]
+        report={'mode':'score_detailed','case_results':[a,b], 'model_aggregates': arms}
+        text=render_summary(report,color=False)
+        self.assertIn('PER-MODEL TOTALS',text)
+        report['model_aggregates'][1]['case_ids']=['case0022']
+        self.assertIn('No aggregate ranking', render_summary(report,color=False))
+
+    def test_two_models_same_case_and_legacy_batch(self):
+        with tempfile.TemporaryDirectory() as td:
+            td=Path(td)
+            cases=td/'cases.csv'
+            cases.write_text('case_id\ncase0006\ncase0022\n')
+            for name in ('a.traj','b.traj','c.traj'):
+                (td/name).write_text('fake')
+            model_csv=td/'models.csv'
+            model_csv.write_text('model,case_id,trajectory,elapsed_seconds\n'
+                                 'SEL04 M24,case0006,a.traj,532\n'
+                                 'ForceBank,case0006,b.traj,575\n'
+                                 'SEL04 M24,case0022,c.traj,1114\n')
+            kwargs=dict(casefile=cases, public_root=td, private=td, case_id=None,
+                        submission=None,elapsed_seconds=None,submission_csv=model_csv,
+                        mode='coverage',microbatch_size=16,nonfo_cache=None,index_cache=td/'cache')
+            tasks,total=score_modes._collect_tasks(**kwargs)
+            self.assertEqual([x['model'] for x in tasks], ['SEL04 M24','ForceBank','SEL04 M24'])
+            self.assertEqual(total,2)
+            original=score_modes._case_worker
+            def fake_worker(task):
+                c=sample_case(model=task.get('model'),case=task['case']['case_id'])
+                c.pop('model',None)
+                c['self_reported_elapsed_seconds']=task['elapsed_seconds']
+                return c
+            score_modes._case_worker=fake_worker
+            try:
+                result=score_modes.run(casefile=cases,private=td,submission_csv=model_csv,
+                                       mode='coverage',index_cache=td/'cache')
+                self.assertEqual(result['schema_version'],'saddlebench-quick-model-comparison-v1')
+                self.assertEqual(len(result['case_results']),3)
+                self.assertEqual(result['selected_cases'],2)
+                self.assertEqual(len(result['model_aggregates']),2)
+                self.assertEqual(result['model_aggregates'][0]['selected_cases'],2)
+                legacy=td/'legacy.csv'
+                legacy.write_text('case_id,trajectory,elapsed_seconds\ncase0006,a.traj,532\ncase0022,c.traj,1114\n')
+                old=score_modes.run(casefile=cases,private=td,submission_csv=legacy,
+                                    mode='coverage',index_cache=td/'cache')
+                self.assertEqual(old['schema_version'],'saddlebench-quick-batch-v1')
+                self.assertNotIn('model_aggregates',old)
+                self.assertNotIn('model',old['case_results'][0])
+                model_csv.write_text('model,case_id,trajectory,elapsed_seconds\n'
+                                     'SEL04 M24,case0006,a.traj,532\n'
+                                     'SEL04 M24,case0006,b.traj,575\n')
+                with self.assertRaisesRegex(ValueError,'DUPLICATE_MODEL_CASE'):
+                    score_modes._collect_tasks(**kwargs)
+                model_csv.write_text('model,case_id,trajectory,elapsed_seconds\n'
+                                     ',case0006,a.traj,532\n')
+                with self.assertRaisesRegex(ValueError,'EMPTY_MODEL_LABEL'):
+                    score_modes._collect_tasks(**kwargs)
+            finally:
+                score_modes._case_worker=original
 
 
-def test_coverage_does_not_label_unmatched_as_bad():
-    report = case("coverage")
-    report["entries"] = report["entries"][:2] + [
-        {"stage": None, "status": "UNKNOWN_UNMATCHED", "category": None}
-    ] * 4
-    output = render_summary(report)
-    assert "No eligible reaction match:   4 (other saddles not checked)" in output
-    assert "Potential bad first-hit matches:" not in output
-    assert "Coverage-only score preview" in output
-
-
-def test_score_mode_does_not_claim_high_barrier_checked():
-    report = case("score")
-    report["entries"] = report["entries"][:3]
-    output = render_summary(report)
-    assert "Potential bad first-hit matches: 1 predictions" in output
-    assert "Remaining diagnostics: not checked" in output
-    assert "Known connected high barrier" not in output
-
-
-def test_batch_and_missing_fields_and_k_zero():
-    a=case(); b=case(name="case0022");b["known_eligible_reactions_K"]=0
-    b["greedy_unique_reactions_U"]=0;b["coverage"]=None
-    result={"mode":"score_detailed", "case_results":[a,b], "aggregate":{
-        "greedy_unique_reactions_U":1,"reference_known_K":4,"micro_coverage":.25,
-        "provisional_score_per_hour": 0.1}}
-    out=render_summary(result)
-    assert "CASES: 2" in out and "case0022" in out
-    assert "ALL CASES | Reactions: 1/4" in out
-    assert "0/0" in out and "N/A%" in out
-    assert "Prediction classification: not available" in render_summary({"mode":"coverage","case_id":"test"})
-
-
-def test_reference_confidence_two_cases_from_published_csv(tmp_path):
-    csvpath = tmp_path / 'cases.csv'
-    csvpath.write_text(
-        'case_id,structure_id,starting_minimum_id,exploration_confidence_heuristic,n_redundant_tail_mean,confidence_basis\n'
-        'case0006,oc20:a,minimum:1,0.95,200,SHUFFLED_ELIGIBLE_OBSERVATIONS_PROXY\n'
-        'case0022,oc20:b,minimum:2,0.75,40,SHUFFLED_ELIGIBLE_OBSERVATIONS_PROXY\n',
-        encoding='utf-8')
-    a = case(name='case0006')
-    a.update(structure_id='oc20:a', starting_minimum_id='minimum:1')
-    b = case(name='case0022')
-    b.update(structure_id='oc20:b', starting_minimum_id='minimum:2')
-    batch = {'mode': 'score_detailed', 'case_results': [a, b]}
-    snapshot = copy.deepcopy(batch)
-    out = render_summary(batch, cases_csv=csvpath)
-    assert 'case0006' in out and '95.00%' in out
-    assert 'case0022' in out and '75.00%' in out
-    assert 'Historical redundant tail (shuffled mean): 200.00 observations' in out
-    assert 'not the probability that all saddles are known' in out
-    assert batch == snapshot
-
-
-def test_missing_and_mismatched_reference_confidence(tmp_path):
-    csvpath = tmp_path / 'cases.csv'
-    csvpath.write_text('case_id,structure_id,starting_minimum_id,exploration_confidence_heuristic,n_redundant_tail_mean\n'
-                       'case0006,expected,minimum:1,,\n', encoding='utf-8')
-    match = case(name='case0006')
-    match.update(structure_id='expected', starting_minimum_id='minimum:1')
-    assert 'N/A (insufficient historical repeat evidence)' in render_summary(match, cases_csv=csvpath)
-    mismatch = case(name='case0006')
-    mismatch.update(structure_id='wrong', starting_minimum_id='minimum:1')
-    assert 'N/A (case identity mismatch)' in render_summary(mismatch, cases_csv=csvpath)
-    unknown = case(name='case0099')
-    assert 'N/A (case not found in cases.csv)' in render_summary(unknown, cases_csv=csvpath)
-    # Existing API continues to work without an optional metadata file.
-    assert 'Reference exploration confidence:' not in render_summary(match)
+if __name__ == '__main__':
+    unittest.main()

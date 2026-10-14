@@ -1,25 +1,24 @@
-"""Human-readable, read-only presentation of published SaddleBench quick reports.
+"""Human-readable leaderboard for SaddleBench quick-mode JSON reports.
 
-The scorer's JSON schema and scientific calculations are unchanged. A displayed
-first-hit known-bad match is NOT a canonical verified bad-reaction count.
+Presentation only: uses each case's existing first-hit results and the
+reference's published exploration-confidence heuristic. No rescoring.
 """
-from collections import Counter
+from collections import Counter, defaultdict
 import csv
 import math
+import os
 from pathlib import Path
+import sys
 
 
 def _case_metadata(cases_csv):
-    """Read historical reference exploration metadata, not new search results."""
     if cases_csv is None or not Path(cases_csv).is_file():
         return {}
-    with Path(cases_csv).open(newline="", encoding="utf-8") as stream:
-        return {row["case_id"]: row for row in csv.DictReader(stream)}
+    with Path(cases_csv).open(newline='', encoding='utf8') as stream:
+        return {row['case_id']: row for row in csv.DictReader(stream)}
 
 
-def _maybe_float(value):
-    if value in (None, ""):
-        return None
+def _numeric(value):
     try:
         result = float(value)
     except (TypeError, ValueError):
@@ -27,121 +26,167 @@ def _maybe_float(value):
     return result if math.isfinite(result) else None
 
 
-def _number(value, digits=2):
-    return "N/A" if value is None else f"{value:,.{digits}f}"
+def _confidence(case, metadata):
+    meta = metadata.get(case.get('case_id'))
+    if meta is None:
+        return None
+    for key in ('structure_id', 'starting_minimum_id'):
+        if case.get(key) is not None and case[key] != meta.get(key):
+            return None
+    value = _numeric(meta.get('exploration_confidence_heuristic'))
+    return value if value is not None and 0 <= value <= 1 else None
 
 
-def _bar(found, known, width=24):
-    filled = max(0, min(width, round(width * found / known))) if known else 0
-    return "[" + "#" * filled + "." * (width - filled) + "]"
+def _cells(case, mode, confidence):
+    entries = case.get('entries')
+    entries = entries if isinstance(entries, list) else None
+    stages = Counter(e.get('stage') or 'unmatched' for e in (entries or []))
+    categories = Counter(e.get('category') for e in (entries or []) if e.get('stage') not in (None, 'eligible'))
+    eligible = stages['eligible']
+    other = sum(n for stage, n in stages.items() if stage not in ('eligible', 'unmatched'))
+    nf = categories['KNOWN_NON_FIRST_ORDER']
+    hb = categories['KNOWN_CONNECTED_HIGH_BARRIER'] if mode == 'score_detailed' else None
+    neutral = other - nf - (hb or 0) if mode == 'score_detailed' else None
+    k = case.get('known_eligible_reactions_K')
+    u = case.get('greedy_unique_reactions_U')
+    cov = _numeric(case.get('coverage'))
+    score = _numeric(case.get('provisional_score_per_hour'))
+    secs = _numeric(case.get('self_reported_elapsed_seconds'))
+    bad_groups = case.get('first_hit_potential_bad_groups_with_known_start') if mode != 'coverage' else None
+    return {
+        'model': str(case.get('model') or 'default'),
+        'case': str(case.get('case_id') or '?'),
+        'n': str(len(entries)) if entries is not None else '-',
+        'uk': f'{u}/{k}' if u is not None and k is not None else '-',
+        'cov': f'{100*cov:.1f}' if cov is not None else '-',
+        'conf': f'{100*confidence:.1f}' if confidence is not None else '-',
+        'hit': str(eligible + other) if entries is not None else '-',
+        'dup': str(sum(e.get('status') == 'DUPLICATE' for e in entries)) if entries is not None else '-',
+        'nf': str(nf) if entries is not None and mode != 'coverage' else '-',
+        'hb': str(hb) if entries is not None and hb is not None else '-',
+        'oth': str(neutral) if entries is not None and neutral is not None else '-',
+        'unm': str(stages['unmatched']) if entries is not None else '-',
+        'bad': str(bad_groups) if bad_groups is not None else '-',
+        'time': str(round(secs)) if secs is not None else '-',
+        'score': f'{score:.2f}' if score is not None else '-',
+        '_sort_score': score,
+        '_cov': cov,
+        '_confidence': confidence,
+        '_bad': bad_groups,
+        '_nf': nf if mode != 'coverage' else None,
+        '_hb': hb,
+    }
 
 
-def render_summary(report, *, cases_csv=None):
-    """Format a single-case or multi-case quick report without modifying it."""
+def _clip(value, width):
+    value = str(value)
+    return value if len(value) <= width else value[:max(0, width-3)] + '...'
+
+
+def _ansi(text, color, enable):
+    return f'\x1b[{color}m{text}\x1b[0m' if enable and color else text
+
+
+def render_summary(report, *, cases_csv=None, color=None):
+    """Render a case-by-model table; never change numeric results or report."""
+    if color is None:
+        color = (sys.stdout.isatty() and not os.environ.get('NO_COLOR')
+                 and os.environ.get('TERM', '') != 'dumb') or os.environ.get('SADDLEBENCH_COLOR') == 'always'
+    if os.environ.get('SADDLEBENCH_COLOR') == 'never':
+        color = False
     metadata = _case_metadata(cases_csv)
-    mode = report.get("mode", "unknown")
-    cases = report.get("case_results")
+    mode = report.get('mode', 'unknown')
+    cases = report.get('case_results')
     if cases is None:
         cases = [report]
-    lines = ["", "=" * 67,
-             f" SADDLEBENCH    MODE: {mode}    CASES: {len(cases)}",
-             "=" * 67]
-    aggregate = report.get("aggregate")
-    if aggregate is not None:
-        k = aggregate.get("reference_known_K")
-        u = aggregate.get("greedy_unique_reactions_U")
-        coverage = aggregate.get("micro_coverage")
-        summary = (f"ALL CASES | Reactions: {u if u is not None else 'N/A'}/"
-                   f"{k if k is not None else 'N/A'}"
-                   f" | Coverage: {_number(coverage * 100 if coverage is not None else None)}%")
-        if mode != "coverage":
-            summary += f" | Provisional score/hour: {_number(aggregate.get('provisional_score_per_hour'), 4)}"
-        lines.append(summary)
+    rows = [_cells(c, mode, _confidence(c, metadata)) for c in cases]
+    grouped = defaultdict(list)
+    for row in rows:
+        grouped[row['case']].append(row)
+    case_count = len(grouped)
+    model_count = len({r['model'] for r in rows})
+    lines = ['', '=' * 112,
+             f' SADDLEBENCH | {mode} | {len(rows)} submissions | {case_count} case(s) | {model_count} model(s)',
+             '=' * 112]
 
-    for case in cases:
-        entries = case.get("entries")
-        if entries is None:
-            # Older/third-party reports may not contain prediction-level details.
-            entries = []
-            entries_available = False
-        else:
-            entries_available = True
-        stages = Counter(e.get("stage") or "unmatched" for e in entries)
-        statuses = Counter(e.get("status") for e in entries)
-        categories = Counter(e.get("category") for e in entries if e.get("stage") not in (None, "eligible"))
-        eligible = stages["eligible"]
-        other = sum(n for stage, n in stages.items() if stage not in ("eligible", "unmatched"))
-        unmatched = stages["unmatched"]
-        k = case.get("known_eligible_reactions_K")
-        u = case.get("greedy_unique_reactions_U")
-        ktext = str(k) if k is not None else "N/A"
-        utext = str(u) if u is not None else "N/A"
-        seconds = case.get("self_reported_elapsed_seconds")
-        case_id = case.get("case_id", "UNKNOWN_CASE")
-        lines.extend(["",
-                      f"{case_id} | {len(entries) if entries_available else 'N/A'} predictions | {_number(seconds, 0)} sec",
-                      (f"  Reaction coverage: {utext}/{ktext} {_bar(u or 0, k or 0)} "
-                       f"{_number(case.get('coverage') * 100 if case.get('coverage') is not None else None)}%"),
-                      f"  {'Coverage-only score preview' if mode == 'coverage' else 'Provisional score'}: {_number(case.get('provisional_score_per_hour'), 4)} / hour"])
-        # This number is computed from *historical reference observations* when
-        # building public cases.csv; it is not a confidence interval for U/K,
-        # nor does it mean all physical saddles have been discovered.
-        meta = metadata.get(case_id)
-        if meta is not None:
-            # Reject incorrectly paired metadata rather than showing a
-            # confidence for a different starting minimum.
-            if (case.get('structure_id') not in (None, meta.get('structure_id'))
-                or case.get('starting_minimum_id') not in (None, meta.get('starting_minimum_id'))):
-                lines.append("  Reference exploration confidence: N/A (case identity mismatch)")
-            else:
-                confidence = _maybe_float(meta.get('exploration_confidence_heuristic'))
-                tail = _maybe_float(meta.get('n_redundant_tail_mean'))
-                if confidence is not None and 0 <= confidence <= 1:
-                    lines.append(f"  Reference exploration confidence (heuristic): {confidence * 100:.2f}%")
-                else:
-                    lines.append("  Reference exploration confidence (heuristic): N/A (insufficient historical repeat evidence)")
-                if tail is not None:
-                    lines.append(f"  Historical redundant tail (shuffled mean): {tail:.2f} observations")
-        elif cases_csv is not None:
-            lines.append("  Reference exploration confidence: N/A (case not found in cases.csv)")
-        if not entries_available:
-            lines.append("  Prediction classification: not available in this report")
-            continue
-        lines.extend([
-            f"  Eligible reaction matches:    {eligible} predictions (includes duplicates)",
-            f"  Distinct eligible reactions:  {utext}",
-            f"  Duplicate eligible matches:  {statuses['DUPLICATE']} predictions",
-        ])
-        if mode == "coverage":
-            lines.append(f"  No eligible reaction match:   {unmatched} (other saddles not checked)")
-            continue
+    # All percentages and colored cells are derived from existing JSON values.
+    columns = [('#', 2, 'rank'), ('MODEL', 19, 'model'), ('CASE', 8, 'case'),
+               ('N', 4, 'n'), ('U/K', 6, 'uk'), ('COV%', 6, 'cov'),
+               ('CONF%', 6, 'conf'), ('HIT', 4, 'hit'), ('DUP', 4, 'dup'),
+               ('NF', 3, 'nf'), ('HB', 3, 'hb'), ('OTH', 3, 'oth'),
+               ('UNM', 3, 'unm'), ('B', 3, 'bad'), ('SEC', 5, 'time'),
+               ('S/H', 7, 'score')]
+    hdr = ' '.join(name.rjust(width) if key not in ('model','case') else name.ljust(width)
+                   for name,width,key in columns)
+    lines.append(_ansi(hdr, '1;36', color))
+    lines.append('-' * len(hdr))
+    for case_id in sorted(grouped):
+        group = sorted(grouped[case_id], key=lambda r:
+                       (r['_sort_score'] is None, -(r['_sort_score'] or 0), r['model']))
+        for i, row in enumerate(group, 1):
+            rendered=[]
+            for name, width, key in columns:
+                value = str(i) if key == 'rank' else row[key]
+                value = _clip(value, width)
+                cell = value.ljust(width) if key in ('model','case') else value.rjust(width)
+                if key == 'cov' and row['_cov'] is not None:
+                    # Color bands are strictly visual, not scientific thresholds.
+                    cell = _ansi(cell, '32' if row['_cov'] >= .9 else '33' if row['_cov'] >= .5 else '31', color)
+                elif key == 'conf' and row['_confidence'] is not None:
+                    cell = _ansi(cell, '36', color)
+                elif key in ('nf','hb','bad') and (row.get('_nf') if key=='nf' else row.get('_hb') if key=='hb' else row.get('_bad')):
+                    cell = _ansi(cell, '31', color)
+                elif key == 'score' and row['_sort_score'] is not None and i == 1 and len(group) > 1:
+                    cell = _ansi(cell, '1;32', color)
+                rendered.append(cell)
+            lines.append(' '.join(rendered))
+        if case_id != sorted(grouped)[-1]:
+            lines.append('')
 
-        nonfo = categories["KNOWN_NON_FIRST_ORDER"]
-        high_barrier = categories["KNOWN_CONNECTED_HIGH_BARRIER"]
-        potential_bad = nonfo + high_barrier
-        lines.extend([
-            f"  Other known saddle matches:   {other} predictions",
-            f"  No match in checked stages:   {unmatched} predictions",
-            f"  Any known reference match:    {eligible + other}/{len(entries)} predictions",
-            f"  Potential bad first-hit matches: {potential_bad} predictions",
-            f"    Known non-first-order:     {nonfo} predictions",
-        ])
-        if mode == "score_detailed":
-            lines.append(f"    Known connected high barrier: {high_barrier} predictions")
-            other_categories = [(name, n) for name, n in categories.items()
-                                if name not in ("KNOWN_NON_FIRST_ORDER", "KNOWN_CONNECTED_HIGH_BARRIER")]
-            if other_categories:
-                lines.append("  Other diagnostic categories (first hit):")
-                for name, count in sorted(other_categories, key=lambda x: (-x[1], str(x[0]))):
-                    lines.append(f"    {name or 'UNKNOWN'}: {count} predictions")
-        else:
-            lines.append("  Remaining diagnostics: not checked (use --mode score_detailed)")
-        b = case.get("first_hit_potential_bad_groups_with_known_start")
-        lines.append(f"  Potential bad groups (first-hit, any start): {b if b is not None else 'N/A'}")
+    # Per-model totals only when every model was scored on the same case set.
+    model_aggregates = report.get('model_aggregates') or []
+    case_sets = [frozenset(m.get('case_ids', [])) for m in model_aggregates]
+    if len(model_aggregates) > 1 and case_sets and len(set(case_sets)) == 1:
+        lines += ['', 'PER-MODEL TOTALS (identical selected cases)',
+                  'MODEL               U/K     COV%  B    SEC    S/H',
+                  '-' * 54]
+        ordered = sorted(model_aggregates,
+                         key=lambda m: -(m.get('aggregate', {}).get('provisional_score_per_hour') or -1))
+        for m in ordered:
+            lines.append(_aggregate_row(m, mode))
+    elif len(model_aggregates) > 1:
+        lines += ['', 'No aggregate ranking: the models were not submitted on identical case sets.']
 
-    lines.extend(["", "NOTE: Reference exploration confidence is a historical rediscovery heuristic,",
-                  "not the probability that all saddles are known or that this run is complete.",
-                  "Unknown predictions are not automatically bad or novel.",
-                  "Potential bad first-hit matches/groups are NOT canonical bad-reaction counts.",
-                  "Coverage mode does not check other saddle types; scores differ by mode."])
-    return "\n".join(lines)
+    lines += ['',
+        'LEGEND  N=predictions; U/K=unique eligible reactions/reference eligible reactions;',
+        '        COV%=reaction coverage; CONF%=historical reference exploration heuristic;',
+        '        HIT=predictions matched in checked stages (includes eligible duplicates);',
+        '        DUP=duplicate eligible predictions; NF=known non-first-order first hits;',
+        '        HB=known connected high-barrier first hits; OTH=other known saddle first hits;',
+        '        UNM=no match in stages checked; B=distinct first-hit penalty groups;',
+        '        SEC=total search seconds; S/H=provisional score/hour (coverage: unpenalized).',
+        'NOTE    CONF% is NOT probability all saddles have been found. B is provisional,',
+        '        not a certified bad-reaction count; unknown is not automatically bad.',
+    ]
+    if mode == 'coverage':
+        lines.append('        Coverage mode only checks eligible reactions; NF/HB/OTH/B are not evaluated.')
+    elif mode == 'score':
+        lines.append('        Score mode does not check HB/OTH; UNM may match unsearched diagnostics.')
+    if color:
+        lines.append('        Colors: green/high coverage, yellow/medium, red/low or bad, cyan/confidence.')
+    return '\n'.join(lines)
+
+
+def _aggregate_row(model_item, mode):
+    a = model_item['aggregate']
+    u = a.get('greedy_unique_reactions_U')
+    k = a.get('reference_known_K')
+    cov = _numeric(a.get('micro_coverage'))
+    sec = _numeric(a.get('total_self_reported_seconds'))
+    score = _numeric(a.get('provisional_score_per_hour'))
+    b = a.get('first_hit_potential_bad_groups_with_known_start') if mode != 'coverage' else None
+    return (f"{_clip(model_item['model'],19):19} {str(u)+'/'+str(k):7} "
+            f"{str(round(cov*100,1)) if cov is not None else '-':>6} "
+            f"{str(b) if b is not None else '-':>3} "
+            f"{str(round(sec)) if sec is not None else '-':>6} "
+            f"{f'{score:.2f}' if score is not None else '-':>7}")

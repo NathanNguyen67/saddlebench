@@ -141,20 +141,32 @@ def _collect_tasks(*, casefile, public_root, private, case_id, submission,
     if case_id is not None:
         if case_id not in cases:
             raise ValueError('UNKNOWN_CASE_ID')
-        jobs = [(case_id, str(submission), elapsed_seconds)]
+        jobs = [(case_id, str(submission), elapsed_seconds, None)]
     else:
         with Path(submission_csv).open(newline='', encoding='utf8') as f:
             reader = csv.DictReader(f)
-            if not {'case_id', 'trajectory', 'elapsed_seconds'}.issubset(reader.fieldnames or []):
+            fields = reader.fieldnames or []
+            if not {'case_id', 'trajectory', 'elapsed_seconds'}.issubset(fields):
                 raise ValueError('SUBMISSION_CSV_COLUMNS_REQUIRED')
+            has_model = 'model' in fields
             rows = list(reader)
         if not rows:
             raise ValueError('EMPTY_SUBMISSION_CSV')
-        if len({r['case_id'] for r in rows}) != len(rows):
-            raise ValueError('DUPLICATE_SUBMITTED_CASE')
-        jobs = [(r['case_id'], r['trajectory'], r['elapsed_seconds']) for r in rows]
+        if has_model:
+            labels = [str(row.get('model') or '').strip() for row in rows]
+            if any(not label for label in labels):
+                raise ValueError('EMPTY_MODEL_LABEL')
+            if len({(label, row['case_id']) for label, row in zip(labels, rows)}) != len(rows):
+                raise ValueError('DUPLICATE_MODEL_CASE')
+            jobs = [(row['case_id'], row['trajectory'], row['elapsed_seconds'], label)
+                    for row, label in zip(rows, labels)]
+        else:
+            if len({row['case_id'] for row in rows}) != len(rows):
+                raise ValueError('DUPLICATE_SUBMITTED_CASE')
+            jobs = [(row['case_id'], row['trajectory'], row['elapsed_seconds'], None)
+                    for row in rows]
     tasks=[]
-    for cid, name, seconds in jobs:
+    for cid, name, seconds, model in jobs:
         if cid not in cases:
             raise ValueError('UNKNOWN_CASE_ID: '+cid)
         traj = Path(name).expanduser()
@@ -166,11 +178,14 @@ def _collect_tasks(*, casefile, public_root, private, case_id, submission,
         seconds = float(seconds)
         if seconds <= 0:
             raise ValueError('ELAPSED_SECONDS_MUST_BE_POSITIVE')
-        tasks.append({'case': cases[cid], 'public': str(public_root), 'private': str(private),
+        task = {'case': cases[cid], 'public': str(public_root), 'private': str(private),
             'trajectory': str(traj), 'elapsed_seconds': seconds, 'mode': mode,
             'microbatch_size': microbatch_size,
             'nonfo_cache': str(nonfo_cache) if nonfo_cache is not None else None,
-            'index_cache': str(index_cache)})
+            'index_cache': str(index_cache)}
+        if model is not None:
+            task['model'] = model
+        tasks.append(task)
     return tasks, len(cases)
 
 
@@ -193,6 +208,24 @@ def _batch_report(reports, mode, total_available):
         'aggregate':aggregate,'case_results':reports,
         'warning': {'score': SCORE_WARNING, 'score_detailed': DETAILED_WARNING,
                     'coverage': COVERAGE_WARNING}[mode]}
+
+
+def _model_report(reports, mode, total_available):
+    """Separate per-model aggregates; do not merge different model denominators."""
+    groups = {}
+    for report in reports:
+        groups.setdefault(report['model'], []).append(report)
+    arms = []
+    for label, items in groups.items():
+        arms.append({'model': label, 'selected_cases': len(items),
+                     'case_ids': sorted(item['case_id'] for item in items),
+                     'aggregate': _batch_report(items, mode, total_available)['aggregate']})
+    return {'schema_version': 'saddlebench-quick-model-comparison-v1',
+            'mode': mode, 'selected_cases': len({r['case_id'] for r in reports}),
+            'selected_submissions': len(reports), 'available_cases': total_available,
+            'model_aggregates': arms, 'case_results': reports,
+            'warning': 'Model scores are comparable only for the same case sets, '
+                       'reference snapshot, PES, scoring policy, and correct self-reported timing.'}
 
 
 def _detailed_batch_report(reports, total_available):
@@ -248,6 +281,11 @@ def run(*, casefile, private, case_id=None, submission=None, elapsed_seconds=Non
             reports=list(pool.map(_case_worker,tasks))
     if case_id:
         return reports[0]
+    if any('model' in task for task in tasks):
+        # Annotate in the parent process: worker and scoring logic stay unchanged.
+        for task, result in zip(tasks, reports):
+            result['model'] = task['model']
+        return _model_report(reports,mode,total)
     return _batch_report(reports,mode,total)
 
 

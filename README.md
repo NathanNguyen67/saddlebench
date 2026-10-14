@@ -109,6 +109,48 @@ python scripts/score_from_hf.py \
 
 **The default is `--processes 1`**, so scoring runs serially. Parallel processing divides separate cases among the requested workers; it does not divide a single case among cores. You can use `--processes 4` for four cases, for example, if your computer has sufficient memory. Relative trajectory paths in the spreadsheet are resolved relative to the spreadsheet file.
 
+### Comparing different models on the same starting structure
+
+Add an optional `model` column to the same `submission.csv`. One row is one
+**(model, case)** submission; different models may score the same case. The
+`model` label is for reporting only and does not affect matching or scoring.
+
+```csv
+model,case_id,trajectory,elapsed_seconds
+SEL04-M24,case0006,sella_case0006.traj,532
+ForceBank-Fourier,case0006,forcebank_case0006.traj,575
+SEL04-M24,case0022,sella_case0022.traj,1114
+ForceBank-Fourier,case0022,forcebank_case0022.traj,1050
+```
+
+```bash
+python scripts/score_from_hf.py \
+  --submission-csv submission.csv --mode score_detailed \
+  --processes 2 --output comparison.json
+```
+
+This prints a per-case ranked terminal table with model names, reference
+coverage, confidence heuristic, first-hit diagnostic counts, penalized bad
+groups, and score/hour. ANSI color is automatic on compatible terminals and
+absent when output is redirected; set `NO_COLOR=1` to disable colors.
+
+CSV submissions **without** a `model` column retain the prior behavior and
+native JSON schema. A model-labeled CSV writes a separate
+`saddlebench-quick-model-comparison-v1` JSON report containing the existing
+`case_results` plus `model` labels and `model_aggregates`; it does not merge
+separate model results into a scientifically meaningless overall score.
+Duplicate `(model, case_id)` pairs are rejected. Per-model aggregate ranks are
+printed only when all models were scored on the same set of cases.
+
+**Display legend:** `N` predictions, `U/K` distinct discovered/known eligible
+reactions, `COV%` coverage, `CONF%` historical reference-exploration heuristic,
+`HIT` predictions matched by a checked stage, `DUP` eligible repeats,
+`NF` known non-first-order first hits, `HB` known connected high-barrier first
+hits, `OTH` other diagnostic first hits, `UNM` unmatched in checked stages,
+`B` distinct first-hit penalized bad saddle groups, `SEC` search seconds,
+`S/H` provisional score/hour. Unknown predictions are not automatically bad.
+The confidence heuristic is not the probability that all saddles are known.
+
 ## Scoring formula
 
 Reaction coverage for one starting structure is
