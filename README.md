@@ -161,6 +161,22 @@ arithmetic mean of the *published historical* case confidence heuristics,
 shown only when all submitted cases have usable reference metadata; it is
 not a calibrated probability of exploration completeness.
 
+### Prediction-level percentages: RED% and ELIG%
+
+- **RED%** = `100 * duplicate eligible-reaction predictions / N`. A duplicate
+  means a prediction matched an eligible reaction identity already credited
+  earlier in that same case and model submission. This is **not** an
+  exhaustive geometric redundancy measurement.
+- **ELIG%** = `100 * predictions matched to eligible reactions / N`,
+  including both first credits and duplicates. This is a reference
+  matching rate, **not** an independent connectedness measurement.
+- **N** = total submitted prediction frames. Model-level RED% and ELIG%
+  use totals across its submitted cases, rather than averaging case
+  percentages. When `N=0`, both percentages display `-`.
+
+These metrics affect **terminal presentation only**; scoring, JSON
+output and reference definitions are unchanged.
+
 **Display legend:** `N` predictions, `U/K` distinct discovered/known eligible
 reactions, `COV%` coverage, `CONF%` historical reference-exploration heuristic,
 `HIT` predictions matched by a checked stage, `DUP` eligible repeats,

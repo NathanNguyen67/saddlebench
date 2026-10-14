@@ -80,6 +80,8 @@ def _cells(case, mode, confidence, dataset):
         'conf': f'{100*confidence:.1f}' if confidence is not None else '-',
         'hit': str(eligible + other) if entries is not None else '-',
         'dup': str(sum(e.get('status') == 'DUPLICATE' for e in entries)) if entries is not None else '-',
+        'red': f"{100*sum(e.get('status') == 'DUPLICATE' for e in entries)/len(entries):.1f}" if entries else '-',
+        'elig': f'{100*eligible/len(entries):.1f}' if entries else '-',
         'nf': str(nf) if entries is not None and mode != 'coverage' else '-',
         'hb': str(hb) if entries is not None and hb is not None else '-',
         'oth': str(neutral) if entries is not None and neutral is not None else '-',
@@ -131,7 +133,7 @@ def render_summary(report, *, cases_csv=None, color=None):
     columns = [('#', 2, 'rank'), ('MODEL', 19, 'model'), ('DATASET', 9, 'dataset'), ('CASE', 5, 'short_case'),
                ('N', 4, 'n'), ('U/K', 6, 'uk'), ('COV%', 6, 'cov'),
                ('CONF%', 6, 'conf'), ('HIT', 4, 'hit'), ('DUP', 4, 'dup'),
-               ('NF', 3, 'nf'), ('HB', 3, 'hb'), ('OTH', 3, 'oth'),
+               ('RED%', 5, 'red'), ('ELIG%', 6, 'elig'), ('NF', 3, 'nf'), ('HB', 3, 'hb'), ('OTH', 3, 'oth'),
                ('UNM', 3, 'unm'), ('B', 3, 'bad'), ('SEC', 5, 'time'),
                ('S/H', 7, 'score')]
     hdr = ' '.join(name.rjust(width) if key not in ('model','case','short_case','dataset') else name.ljust(width)
@@ -179,7 +181,9 @@ def render_summary(report, *, cases_csv=None, color=None):
         'LEGEND  N=predictions; U/K=unique eligible reactions/reference eligible reactions;',
         '        COV%=reaction coverage; CONF%=historical reference exploration heuristic;',
         '        HIT=predictions matched in checked stages (includes eligible duplicates);',
-        '        DUP=duplicate eligible predictions; NF=known non-first-order first hits;',
+        '        DUP=duplicate eligible predictions; RED%=100*DUP/N;',
+        '        ELIG%=100*eligible-reaction-matched predictions/N (incl. duplicates);',
+        '        NF=known non-first-order first hits;',
         '        HB=known connected high-barrier first hits; OTH=other known saddle first hits;',
         '        UNM=no match in stages checked; B=distinct first-hit penalty groups;',
         '        SEC=total search seconds; S/H=provisional score/hour (coverage: unpenalized).',
@@ -231,7 +235,7 @@ def _model_view(report, cases_csv, color):
               'Same submitted case set: NO — aggregate ranking disabled')]
     columns = [('#', 2), ('MODEL', 19), ('DATASET', 8), ('CASES', 7),
                ('U/K', 9), ('COV%', 6), ('REF%', 6), ('N', 6),
-               ('DUP', 5), ('NF', 4), ('HB', 4), ('OTH', 5),
+               ('DUP', 5), ('RED%', 5), ('ELIG%', 6), ('NF', 4), ('HB', 4), ('OTH', 5),
                ('UNM', 5), ('B', 4), ('SEC', 8), ('S/H', 9)]
     header = ' '.join(name.ljust(width) if name in ('MODEL', 'DATASET') else name.rjust(width)
                       for name, width in columns)
@@ -275,6 +279,8 @@ def _model_view(report, cases_csv, color):
                   f'{100 * cov:.1f}' if cov is not None else '-',
                   f'{100 * reference_confidence:.1f}' if reference_confidence is not None else '-',
                   str(n), str(statuses['DUPLICATE']),
+                  f"{100*statuses['DUPLICATE']/n:.1f}" if n else '-',
+                  f"{100*stages['eligible']/n:.1f}" if n else '-',
                   str(nf) if mode != 'coverage' else '-',
                   str(hb) if hb is not None else '-',
                   str(neutral) if neutral is not None else '-',
@@ -297,7 +303,9 @@ def _model_view(report, cases_csv, color):
         lines.append(' '.join(cells))
     lines += ['', 'LEGEND  U/K=unique eligible reactions / known eligible reactions; COV%=U/K;',
               '        REF%=mean published historical reference-confidence heuristic for submitted cases;',
-              '        N=predictions; DUP=duplicate eligible hits; NF=known non-first-order first hits;',
+              '        N=predictions; DUP=duplicate eligible hits; RED%=100*DUP/N;',
+              '        ELIG%=100*eligible-reaction-matched predictions/N (incl. duplicates);',
+              '        NF=known non-first-order first hits;',
               '        HB=high-barrier first hits; OTH=other known saddle first hits;',
               '        UNM=unmatched in checked stages; B=distinct first-hit penalty groups;',
               '        SEC=search seconds; S/H=provisional score per hour.',
