@@ -125,8 +125,11 @@ score_per_hour = 100 * (U / K)^2 * (U / (U + 2*B)) * (3600 / T)
 
 - **U:** distinct eligible reaction identities discovered by first-hit matching.
 - **K:** number of known eligible reaction identities for this starting structure.
-- **B:** distinct first-hit potential-bad *saddle groups* with verified starting-minimum
-  provenance, **not** a certified or exhaustive count of bad reactions.
+- **B:** distinct first-hit potential-bad *saddle groups*, including groups whose
+  starting-minimum provenance is unrecorded. This is **not** a certified or
+  exhaustive count of bad reactions.
+  Existing JSON fields ending in `_with_known_start` retain their names for
+  compatibility, but now count groups with unrecorded starts too.
 - **T:** total self-reported search time in **seconds**, including unsuccessful
   attempts. This is search time, not the scoring program's runtime.
 

@@ -196,7 +196,7 @@ def run_case(public,private,case,trajectory,seconds,nonfo_file,*,mode,batch_size
                 if rec['category']==NONFO:
                     rec['start_verified']=bool(picked.get('start_known'))
                     seen_nonfo.add(str(picked.get('saddle_group_id') or picked.get('saddle_id')))
-                if rec['category'] in (NONFO,'KNOWN_CONNECTED_HIGH_BARRIER') and bool(picked.get('start_known')):
+                if rec['category'] in (NONFO,'KNOWN_CONNECTED_HIGH_BARRIER'):
                     seen_bad.add(str(picked.get('saddle_group_id') or picked.get('saddle_id')))
                 diag_kinds[str(rec['category'])]+=1
         status_count[rec['status']]+=1

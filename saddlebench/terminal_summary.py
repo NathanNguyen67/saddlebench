@@ -137,7 +137,7 @@ def render_summary(report, *, cases_csv=None):
         else:
             lines.append("  Remaining diagnostics: not checked (use --mode score_detailed)")
         b = case.get("first_hit_potential_bad_groups_with_known_start")
-        lines.append(f"  Potential bad groups, verified start (first-hit): {b if b is not None else 'N/A'}")
+        lines.append(f"  Potential bad groups (first-hit, any start): {b if b is not None else 'N/A'}")
 
     lines.extend(["", "NOTE: Reference exploration confidence is a historical rediscovery heuristic,",
                   "not the probability that all saddles are known or that this run is complete.",
