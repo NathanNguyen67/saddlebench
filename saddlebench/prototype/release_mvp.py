@@ -18,7 +18,7 @@ import random
 import shutil
 
 from saddlebench.prototype import reaction_mvp as rm
-from saddlebench.matching.geometry import core_drift_maxdev, cannot_match_by_anchor
+from saddlebench.matching.geometry import core_drift_maxdev, cannot_match_by_anchor, BatchedAnchorFilter
 from saddlebench.reference.snapshot import canonical
 
 MATCH_A = 0.2
@@ -320,10 +320,18 @@ def _prepare_diag_lookup(root,case,progress=None):
     return _prepare_diag_lookups(root,[case],progress)[case['case_id']]
 
 
-def diagnose(matched, prediction, lookup):
+def diagnose(matched, prediction, lookup, anchor_batches=None):
     if matched['status']!='NO_MATCH':return {**matched,'diagnostic':'ELIGIBLE_REFERENCE_'+matched['status'],'penalty_key':None}
     candidates=[]; uncomparable=0
-    for item in lookup.get(tuple(prediction['geometry']['numbers']),[]):
+    key=tuple(prediction['geometry']['numbers'])
+    items=lookup.get(key,[])
+    if anchor_batches is None:
+        keep=BatchedAnchorFilter(items).possible(prediction['geometry'],MATCH_A)
+    else:
+        if key not in anchor_batches:anchor_batches[key]=BatchedAnchorFilter(items)
+        keep=anchor_batches[key].possible(prediction['geometry'],MATCH_A)
+    for item,possibly_matching in zip(items,keep):
+        if not possibly_matching:continue
         if cannot_match_by_anchor(prediction['geometry'],item['geometry'],MATCH_A):continue
         try:d=core_drift_maxdev(prediction['geometry'],item['geometry'])
         except ValueError:uncomparable+=1;continue
@@ -378,10 +386,10 @@ def grade_case(public,private,case_id,submission,seconds,progress=None,diagnosti
                  prepared_reference=prepared_reference)
     preds=rm.read_submissions(submission,start=case['starting_minimum_id'],parent=case['structure_id'],pes=case['pes_id'])
     lookup=diagnostic_lookup if diagnostic_lookup is not None else _prepare_diag_lookup(priv,case,progress)
-    results=[];bad=set()
+    results=[];bad=set();diag_anchor_batches={}
     if progress:progress('diagnostic',0,len(preds))
     for progress_i,(matched,pred) in enumerate(zip(raw['submissions'],preds),1):
-        d=diagnose(matched,pred,lookup)
+        d=diagnose(matched,pred,lookup,diag_anchor_batches)
         if d.get('penalty_key'):bad.add(d['penalty_key'])
         results.append(d)
         if progress and (progress_i%10==0 or progress_i==len(preds)):

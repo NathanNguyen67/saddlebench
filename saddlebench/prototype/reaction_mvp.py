@@ -17,7 +17,7 @@ from pathlib import Path
 
 from saddlebench.reference.snapshot import canonical, validate_geometry
 from saddlebench.reference.safe_output import AtomicDirectory
-from saddlebench.matching.geometry import core_drift_maxdev, cannot_match_by_anchor
+from saddlebench.matching.geometry import core_drift_maxdev, cannot_match_by_anchor, BatchedAnchorFilter
 from saddlebench.io.extxyz import read_extxyz
 
 SADDLE_FMAX = 0.005
@@ -268,12 +268,19 @@ def score(reference,submission,elapsed_seconds,start=None,pes=None,parent=None,p
     for r in reactions:
         for m in r['members']:
             by_scope[(r['structure_id'],r['starting_minimum_id'],r['pes_id'],tuple(m['geometry']['numbers']))].append((r,m))
+    anchor_batches={}  # lazy per exact scope, constructed once per batch scoring
     credited=set(); results=[];scope_counts=defaultdict(Counter)
     if progress:progress('eligible',0,len(submissions))
     for progress_i,sub in enumerate(submissions,1):
         scope=(sub['parent_structure_id'],sub['starting_minimum_id'],sub['pes_id'])
         ids=set(); errors=set(); matched_groups={}
-        for r,m in by_scope.get((*scope,tuple(sub['geometry']['numbers'])),[]):
+        scoped_key=(*scope,tuple(sub['geometry']['numbers']))
+        members=by_scope.get(scoped_key,[])
+        if scoped_key not in anchor_batches:
+            anchor_batches[scoped_key]=BatchedAnchorFilter(members,lambda pair: pair[1]['geometry'])
+        keep=anchor_batches[scoped_key].possible(sub['geometry'],0.2)
+        for (r,m),possibly_matching in zip(members,keep):
+            if not possibly_matching:continue
             if cannot_match_by_anchor(sub['geometry'],m['geometry'],0.2):continue
             try:d=_compare(sub['geometry'],m['geometry'])
             except ValueError as e:errors.add(str(e));continue

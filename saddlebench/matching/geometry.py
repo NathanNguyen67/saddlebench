@@ -180,3 +180,122 @@ def cannot_match_by_anchor(a,b,maxdev):
     except (ValueError,TypeError,IndexError,np.linalg.LinAlgError):
         return False
     return bool(np.any(np.linalg.norm(relative,axis=1)>2*float(maxdev)+1e-8))
+
+
+class BatchedAnchorFilter:
+    """Conservative, bounded vectorized anchor rejection for an ordered sequence.
+
+    This is ONLY a necessary-condition filter. A True mask entry is still
+    evaluated by the original per-pair filter and canonical maxdev kernel.
+    The reference's cell is used for compatibility, but *the query cell* is
+    used for MIC, exactly as in cannot_match_by_anchor(a, b, ...).
+
+    Memory: O(reference_count * sampled_atoms) persistent and
+    O(chunk_size * sampled_atoms) scratch, not O(all_reference * all_atoms).
+    No result or reference identity is reordered or collapsed.
+    """
+
+    def __init__(self, entries, geometry_of=lambda item: item.get('geometry', item), chunk_size=128):
+        self.size = len(entries)
+        self.chunk_size = max(1, int(chunk_size))
+        buckets = {}
+        for index, entry in enumerate(entries):
+            try:
+                g = geometry_of(entry)
+                numbers = tuple(g['numbers'])
+                pbc = tuple(g['pbc'])
+                positions = np.asarray(g['positions_angstrom'], dtype=float)
+                cell = np.asarray(g['cell_angstrom'], dtype=float)
+                n = len(numbers)
+                if (len(pbc) != 3 or n < 2 or positions.shape != (n, 3)
+                        or cell.shape != (3, 3) or not np.isfinite(positions).all()
+                        or not np.isfinite(cell).all()):
+                    continue
+                selected = sorted({0, n//4, n//2, (3*n)//4, n-1})
+                key = (numbers, pbc)
+                buckets.setdefault(key, []).append((index, positions[selected], cell))
+            except (KeyError, TypeError, ValueError, OverflowError, IndexError):
+                # Preserve original validation/error behavior for malformed refs.
+                continue
+        self.buckets = {}
+        for key, data in buckets.items():
+            self.buckets[key] = (
+                np.asarray([d[0] for d in data], dtype=np.intp),
+                np.stack([d[1] for d in data]),
+                np.stack([d[2] for d in data]),
+            )
+
+    def possible(self, query, maxdev):
+        """Return ordered True=must-check mask, with no false match omissions."""
+        keep = np.ones(self.size, dtype=bool)
+        try:
+            numbers = tuple(query['numbers'])
+            pbc = tuple(query['pbc'])
+            bucket = self.buckets.get((numbers, pbc))
+            if bucket is None:
+                return keep
+            query_pos = np.asarray(query['positions_angstrom'], dtype=float)
+            cell = np.asarray(query['cell_angstrom'], dtype=float)
+            n = len(numbers)
+            if (len(pbc) != 3 or query_pos.shape != (n, 3)
+                    or cell.shape != (3, 3) or not np.isfinite(query_pos).all()
+                    or not np.isfinite(cell).all()):
+                return keep
+            selected = sorted({0, n//4, n//2, (3*n)//4, n-1})
+            anchor = query_pos[selected]
+            indices, positions, cells = bucket
+            periodic = np.asarray(pbc, dtype=bool)
+            if periodic.any():
+                basis = cell[periodic].T
+                singular = np.linalg.svd(basis, compute_uv=False)
+                sigma = float(singular[-1])
+                scale = float(singular[0])
+                # Ill-conditioned cells, including nearly singular cells,
+                # are always handled by the existing exact scalar code.
+                if (not np.isfinite(sigma) or sigma <= 1e-10*max(1., scale)
+                        or scale/sigma > 20.):
+                    return keep
+                gram = basis.T @ basis
+            else:
+                basis = None
+            # Extra guard is intentionally larger than the scalar filter's
+            # 1e-8: near-threshold candidates go through the old exact path.
+            guard = 1e-7 * (1. + float(maxdev))
+            cutoff = 2. * float(maxdev) + 1e-8 + guard
+            for lo in range(0, len(indices), self.chunk_size):
+                hi = min(lo + self.chunk_size, len(indices))
+                compatible = np.max(np.abs(cells[lo:hi] - cell), axis=(1, 2)) <= 0.05
+                if not np.any(compatible):
+                    continue
+                offsets = np.flatnonzero(compatible)
+                rel = positions[lo:hi][offsets] - anchor
+                rel -= rel[:, :1, :]
+                # Avoid cancellation in enormous, nearly equal coordinates;
+                # the frozen scalar implementation handles such extremes.
+                if np.max(np.abs(rel)) >= 1e5:
+                    continue
+                # For periodic cells, the orthogonal residual plus the minimum
+                # singular value yield a rigorously conservative Euclidean
+                # lower bound for distance to EVERY lattice image:
+                # ||d - B*n||^2 >= ||d - B*f||^2 +
+                #                      sigma_min(B)^2 * dist(f,Z^m)^2.
+                if basis is None:
+                    lower = np.linalg.norm(rel, axis=2)
+                else:
+                    flat = rel.reshape(-1, 3)
+                    f = np.linalg.solve(gram, (flat @ basis).T).T
+                    normal = flat - f @ basis.T
+                    residue = f - np.rint(f)
+                    lower_sq = (np.einsum('ij,ij->i', normal, normal)
+                                + sigma*sigma*np.einsum('ij,ij->i', residue, residue))
+                    lower = np.sqrt(np.maximum(lower_sq, 0.)).reshape(len(offsets), -1)
+                reject = np.any(lower > cutoff, axis=1)
+                # Comparability and any numerical abnormalities are deferred
+                # to the frozen original matcher rather than being rejected.
+                reject &= np.isfinite(lower).all(axis=1)
+                keep[indices[lo:hi][offsets[reject]]] = False
+        except (KeyError, TypeError, ValueError, OverflowError, IndexError,
+                np.linalg.LinAlgError, FloatingPointError):
+            # No partial rejection if numerical certification failed.
+            return np.ones(self.size, dtype=bool)
+        return keep
