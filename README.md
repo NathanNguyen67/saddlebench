@@ -137,9 +137,14 @@ python scripts/score_from_hf.py \
   --processes 2 --output comparison.json
 ```
 
-This prints a per-case ranked terminal table with model names, reference
-coverage, confidence heuristic, first-hit diagnostic counts, penalized bad
-groups, and score/hour. ANSI color is automatic on compatible terminals and
+This prints a **model-level aggregate leaderboard by default** (one row per model),
+with reference coverage, mean historical reference-confidence heuristic,
+first-hit diagnostic counts, penalized bad groups and score/hour. The score
+and group totals use the existing aggregation; no formulas are changed.
+Use `--view case` to display the previous per-case ranked table.
+For unlabeled CSVs or single-case commands, the existing case view is used.
+The model leaderboard ranks only when all models have identical submitted
+case sets; this does **not** verify a complete benchmark cohort. ANSI color is automatic on compatible terminals and
 absent when output is redirected; set `NO_COLOR=1` to disable colors.
 
 CSV submissions **without** a `model` column retain the prior behavior and
@@ -149,6 +154,12 @@ native JSON schema. A model-labeled CSV writes a separate
 separate model results into a scientifically meaningless overall score.
 Duplicate `(model, case_id)` pairs are rejected. Per-model aggregate ranks are
 printed only when all models were scored on the same set of cases.
+`--view` only changes the terminal display, not the JSON report.
+Terminal options: `--view model` (default for model-labeled CSV) and
+`--view case` (individual case comparison). Model-level `REF%` is the
+arithmetic mean of the *published historical* case confidence heuristics,
+shown only when all submitted cases have usable reference metadata; it is
+not a calibrated probability of exploration completeness.
 
 **Display legend:** `N` predictions, `U/K` distinct discovered/known eligible
 reactions, `COV%` coverage, `CONF%` historical reference-exploration heuristic,

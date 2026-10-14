@@ -298,6 +298,7 @@ def main(argv=None):
     p.add_argument('--elapsed-seconds',type=float,help='Search runtime, not scoring runtime')
     p.add_argument('--output',required=True,help='New JSON output path; never overwritten')
     p.add_argument('--mode',choices=MODES,default='score',help='score (default): greedy eligible + non-FO; score_detailed: greedy all diagnostics; coverage: greedy eligible only')
+    p.add_argument('--view',choices=('model','case'),default='model',help='Terminal output view (default: model for labeled CSV; case shows individual submissions)')
     p.add_argument('--processes',type=int,default=1,help='Case-level CPU processes; default 1, no parallelism')
     p.add_argument('--microbatch-size',type=int,default=16,help='First-hit exact vectorized MIC microbatch; default 16')
     p.add_argument('--cache-dir',default=str(Path.home()/'.cache/saddlebench_reference'))
@@ -371,7 +372,7 @@ def main(argv=None):
     print('PROCESSES='+str(min(args.processes,1 if args.case_id else len(result['case_results']))))
     print('OUTPUT='+str(out))
     from saddlebench.terminal_summary import render_summary
-    print(render_summary(result, cases_csv=casefile))
+    print(render_summary(result, cases_csv=casefile, view=args.view))
     return 0
 
 if __name__=='__main__':

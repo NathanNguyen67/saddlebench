@@ -79,9 +79,11 @@ class LeaderboardTests(unittest.TestCase):
               {'model':'another','case_ids':['case0006'], 'aggregate':score_modes._batch_report([b], 'score_detailed',123)['aggregate']}]
         report={'mode':'score_detailed','case_results':[a,b], 'model_aggregates': arms}
         text=render_summary(report,color=False)
-        self.assertIn('PER-MODEL TOTALS',text)
+        self.assertIn('MODEL LEADERBOARD',text)
+        self.assertIn('PER-MODEL TOTALS', render_summary(report,color=False,view='case'))
         report['model_aggregates'][1]['case_ids']=['case0022']
-        self.assertIn('No aggregate ranking', render_summary(report,color=False))
+        self.assertIn('UNRANKED', render_summary(report,color=False))
+        self.assertIn('No aggregate ranking', render_summary(report,color=False,view='case'))
 
     def test_two_models_same_case_and_legacy_batch(self):
         with tempfile.TemporaryDirectory() as td:

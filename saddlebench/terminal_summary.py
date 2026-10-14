@@ -208,3 +208,123 @@ def _aggregate_row(model_item, mode):
             f"{str(b) if b is not None else '-':>3} "
             f"{str(round(sec)) if sec is not None else '-':>6} "
             f"{f'{score:.2f}' if score is not None else '-':>7}")
+
+
+# Model-view-default: presentation uses existing model_aggregates only.
+# No scoring logic, native JSON fields or first-hit classifications change.
+def _model_view(report, cases_csv, color):
+    metadata = _case_metadata(cases_csv)
+    mode = report.get('mode', 'unknown')
+    models = report['model_aggregates']
+    observations = defaultdict(list)
+    for item in report.get('case_results', []):
+        observations[item.get('model')].append(item)
+    case_sets = [frozenset(m.get('case_ids', [])) for m in models]
+    comparable = len(set(case_sets)) <= 1
+    union = set().union(*case_sets) if case_sets else set()
+    ranked = sorted(models, key=lambda m: (
+        _numeric(m.get('aggregate', {}).get('provisional_score_per_hour')) is None,
+        -(_numeric(m.get('aggregate', {}).get('provisional_score_per_hour')) or 0),
+        m['model'])) if comparable else sorted(models, key=lambda m: m['model'])
+    lines = ['', 'SADDLEBENCH | MODEL LEADERBOARD | ' + mode,
+             ('Same submitted case set: YES' if comparable else
+              'Same submitted case set: NO — aggregate ranking disabled')]
+    columns = [('#', 2), ('MODEL', 19), ('DATASET', 8), ('CASES', 7),
+               ('U/K', 9), ('COV%', 6), ('REF%', 6), ('N', 6),
+               ('DUP', 5), ('NF', 4), ('HB', 4), ('OTH', 5),
+               ('UNM', 5), ('B', 4), ('SEC', 8), ('S/H', 9)]
+    header = ' '.join(name.ljust(width) if name in ('MODEL', 'DATASET') else name.rjust(width)
+                      for name, width in columns)
+    lines += [_ansi(header, '1;36', color), '-' * len(header)]
+    for index, model in enumerate(ranked, 1):
+        a = model.get('aggregate', {})
+        label = model['model']
+        entries = observations.get(label, [])
+        stages = Counter()
+        categories = Counter()
+        statuses = Counter()
+        n = 0
+        dataset_names = set()
+        confidence_values = []
+        for case in entries:
+            predictions = case.get('entries') or []
+            n += len(predictions)
+            stages.update(p.get('stage') or 'unmatched' for p in predictions)
+            statuses.update(p.get('status') for p in predictions)
+            categories.update(p.get('category') for p in predictions
+                              if p.get('stage') not in (None, 'eligible'))
+            dataset_names.add(_dataset(case, metadata))
+            confidence_values.append(_confidence(case, metadata))
+        dataset = next(iter(dataset_names)) if len(dataset_names) == 1 else 'MIXED' if dataset_names else '-'
+        reference_confidence = (sum(confidence_values) / len(confidence_values)
+                                if confidence_values and all(v is not None for v in confidence_values)
+                                else None)
+        k = a.get('reference_known_K')
+        u = a.get('greedy_unique_reactions_U')
+        cov = _numeric(a.get('micro_coverage'))
+        score = _numeric(a.get('provisional_score_per_hour'))
+        sec = _numeric(a.get('total_self_reported_seconds'))
+        b = a.get('first_hit_potential_bad_groups_with_known_start') if mode != 'coverage' else None
+        other = sum(q for stage, q in stages.items() if stage not in ('eligible', 'unmatched'))
+        nf = categories['KNOWN_NON_FIRST_ORDER']
+        hb = categories['KNOWN_CONNECTED_HIGH_BARRIER'] if mode == 'score_detailed' else None
+        neutral = other - nf - (hb or 0) if mode == 'score_detailed' else None
+        values = [str(index) if comparable else '-', label, dataset,
+                  f"{len(model.get('case_ids', []))}/{len(union)}",
+                  f'{u}/{k}' if u is not None and k is not None else '-',
+                  f'{100 * cov:.1f}' if cov is not None else '-',
+                  f'{100 * reference_confidence:.1f}' if reference_confidence is not None else '-',
+                  str(n), str(statuses['DUPLICATE']),
+                  str(nf) if mode != 'coverage' else '-',
+                  str(hb) if hb is not None else '-',
+                  str(neutral) if neutral is not None else '-',
+                  str(stages['unmatched']), str(b) if b is not None else '-',
+                  str(round(sec)) if sec is not None else '-',
+                  f'{score:.2f}' if score is not None else '-']
+        cells = []
+        for (name, width), value in zip(columns, values):
+            cell = _clip(value, width)
+            cell = cell.ljust(width) if name in ('MODEL', 'DATASET') else cell.rjust(width)
+            if name == 'COV%' and cov is not None:
+                cell = _ansi(cell, '32' if cov >= .9 else '33' if cov >= .5 else '31', color)
+            elif name == 'REF%' and reference_confidence is not None:
+                cell = _ansi(cell, '36', color)
+            elif name in ('NF', 'HB', 'B') and value not in ('0', '-'):
+                cell = _ansi(cell, '31', color)
+            elif name == 'S/H' and index == 1 and comparable and score is not None:
+                cell = _ansi(cell, '1;32', color)
+            cells.append(cell)
+        lines.append(' '.join(cells))
+    lines += ['', 'LEGEND  U/K=unique eligible reactions / known eligible reactions; COV%=U/K;',
+              '        REF%=mean published historical reference-confidence heuristic for submitted cases;',
+              '        N=predictions; DUP=duplicate eligible hits; NF=known non-first-order first hits;',
+              '        HB=high-barrier first hits; OTH=other known saddle first hits;',
+              '        UNM=unmatched in checked stages; B=distinct first-hit penalty groups;',
+              '        SEC=search seconds; S/H=provisional score per hour.',
+              'NOTE    B is provisional, not a certified bad-reaction count. REF% is not',
+              '        probability all saddles were found. Cases are only checked against',
+              '        the submitted union; this does NOT certify full benchmark coverage.',
+              '        Use --view case for per-case results.']
+    if not comparable:
+        lines.append('        UNRANKED: models have different submitted case sets.')
+    if mode == 'coverage':
+        lines.append('        Coverage mode does not evaluate NF/HB/OTH/B.')
+    elif mode == 'score':
+        lines.append('        Score mode does not evaluate HB/OTH.')
+    return '\n'.join(lines)
+
+
+# Preserve the original case view and its existing behavior.
+_case_view = render_summary
+
+def render_summary(report, *, cases_csv=None, color=None, view='model'):
+    if view not in ('model', 'case'):
+        raise ValueError('INVALID_TERMINAL_VIEW')
+    if color is None:
+        color = (sys.stdout.isatty() and not os.environ.get('NO_COLOR')
+                 and os.environ.get('TERM', '') != 'dumb') or os.environ.get('SADDLEBENCH_COLOR') == 'always'
+    if os.environ.get('SADDLEBENCH_COLOR') == 'never':
+        color = False
+    if view == 'case' or not report.get('model_aggregates'):
+        return _case_view(report, cases_csv=cases_csv, color=color)
+    return _model_view(report, cases_csv, color)
