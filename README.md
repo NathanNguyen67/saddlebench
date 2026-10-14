@@ -109,6 +109,61 @@ python scripts/score_from_hf.py \
 
 **The default is `--processes 1`**, so scoring runs serially. Parallel processing divides separate cases among the requested workers; it does not divide a single case among cores. You can use `--processes 4` for four cases, for example, if your computer has sufficient memory. Relative trajectory paths in the spreadsheet are resolved relative to the spreadsheet file.
 
+## Scoring formula
+
+Reaction coverage for one starting structure is
+
+```text
+coverage = U / K
+```
+
+The reported provisional score per hour is
+
+```text
+score_per_hour = 100 * (U / K)^2 * (U / (U + 2*B)) * (3600 / T)
+```
+
+- **U:** distinct eligible reaction identities discovered by first-hit matching.
+- **K:** number of known eligible reaction identities for this starting structure.
+- **B:** distinct first-hit potential-bad *saddle groups* with verified starting-minimum
+  provenance, **not** a certified or exhaustive count of bad reactions.
+- **T:** total self-reported search time in **seconds**, including unsuccessful
+  attempts. This is search time, not the scoring program's runtime.
+
+`coverage` mode skips bad-saddle diagnostics (`B=0` in the score preview).
+`score` mode considers known non-first-order first hits; `score_detailed`
+additionally considers known connected high-barrier saddles. The matching
+modes may produce different first-hit estimates. A score is zero for `U=0`
+and undefined (`null`) if `K=0`.
+
+### Reference exploration confidence (heuristic)
+
+The terminal summary separately shows the **published reference's historical
+exploration-confidence heuristic for each case**. It is read from the verified
+published `cases.csv`, and **not** calculated from the new submission.
+
+```text
+n_red = mean redundant eligible observations after the last new reaction
+        across shuffled historical observation sequences
+exploration_confidence = clamp(1 - 10 / n_red, 0, 1)
+```
+
+When there is insufficient historical rediscovery evidence, the confidence
+is unavailable (`N/A`). This is a redundancy-based heuristic, **not** a
+calibrated probability that all physical saddles/reactions are known, and
+not a confidence interval on a new submission's `U/K` coverage.
+
+### Terminal summary
+
+After writing the unchanged, machine-readable JSON score,
+`scripts/score_from_hf.py` also prints coverage, score preview, reference
+exploration confidence, prediction-match classifications, and (when checked
+by the mode) known non-first-order and connected high-barrier first hits.
+First-hit bad-saddle matches and groups are **not** canonical verified counts
+of bad reactions. Unknown predictions are not automatically wrong or novel.
+This is display-only: scoring definitions, reference matching, and the native
+JSON schema remain unchanged.
+
 ## Understanding the results
 
 **Coverage** is the fraction of known eligible reactions discovered for a case. For example, discovering 4 distinct eligible reactions out of 10 gives 40% coverage; discovering the same reaction multiple times does not increase it.

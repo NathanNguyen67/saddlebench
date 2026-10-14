@@ -332,6 +332,8 @@ def main(argv=None):
     print('MODE='+args.mode)
     print('PROCESSES='+str(min(args.processes,1 if args.case_id else len(result['case_results']))))
     print('OUTPUT='+str(out))
+    from saddlebench.terminal_summary import render_summary
+    print(render_summary(result, cases_csv=casefile))
     return 0
 
 if __name__=='__main__':
