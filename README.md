@@ -1,62 +1,87 @@
 # SaddleBench
 
-SaddleBench scores predicted saddle-point geometries against the **public published reference** of eligible reactions and known saddle diagnostics. Scoring is CPU-only; your trajectories stay local. This is an open-reference research prototype, **not** an independently certified or exhaustive benchmark ground truth.
+SaddleBench compares predicted saddle-point structures with a public collection of known chemical reactions and other saddle points. It tells you how many known reactions your search discovered and, if you choose, whether some predictions also resemble other saddle points in the reference dataset.
 
-## Scoring modes
+You can score results on your own computer. SaddleBench does not run the searches for you, and your predicted structures are not uploaded.
 
-Use `--mode` with `python scripts/score_from_hf.py`. All **three modes use
-certified greedy first-hit matching**, a cached measured saddle-group radius
-index, nearest-group-first search, and exact core-drift **maxdev <= 0.2 A**.
-The default is `score`. They search in this order:
+## Datasets
 
-| Mode | Search order | Stopping rule | Output |
-|---|---|---|---|
-| **`score` (default)** | Eligible reactions, then known non-first-order saddles if eligible-unmatched | First exact hit | Reaction-credit preview and first-hit non-first-order flags |
-| **`score_detailed`** | Eligible reactions, then known non-first-order, then all remaining diagnostic categories if still unmatched | First exact hit per prediction | Greedy full-catalog existence and first-hit category; **NOT exhaustive W2 match lists or canonical B** |
-| **`coverage`** | Eligible reactions only | First exact hit | Unique first-hit eligible-reaction coverage; no diagnostics |
+| Dataset | What it contains | Link |
+| --- | --- | --- |
+| **Starting structures** | 123 starting structures, case information, and example submissions. Choose a structure here to start a saddle-point search. | [SaddleBench starting structures](https://huggingface.co/datasets/traingletrain/saddlebench-prototype) |
+| **Scoring reference** | Known eligible reactions and other registered saddle points used to evaluate your predictions. Includes 2,387 eligible reaction identities and 83,529 diagnostic saddle records. | [SaddleBench scoring reference](https://huggingface.co/datasets/traingletrain/saddlebench-reference-private) |
 
-**Change from RC1:** `score_detailed` is now the already benchmarked *greedy
-full* algorithm (18.65 s for the earlier 499-prediction, two-process
-Saskatchewan experiment). It is **not** the old exhaustive W2 scorer and does
-**not** preserve W2's native JSON schema. This is an intentional scientific
-*reporting/stopping-rule* change. Earlier W2 numerical scores must not be
-silently compared to the new greedy scores.
+**Both datasets are public.** The word `private` in the second dataset's address is part of its name; you do not need permission to download it. These counts describe the currently published collection, not the number of reactions in any single starting structure.
 
-The group bound and exact MIC calculations preserve the existing geometric
-identity definition; topology is never used for equality. However, stopping at
-one eligible hit can hide cross-reaction ambiguity, and stopping at one
-diagnostic hit can hide multiple classifications. Every greedy JSON result
-sets `canonical_known_bad_unique_B: null`. Greedy `B`-like counts are **first-hit
-preview indicators**, not proven W2 bad-saddle penalties. The frozen W2 source
-remains in the repository for historical rescoring, but no longer corresponds
-to any of these three public `--mode` names.
+## Choose what to measure
 
-### Choosing the mode
+SaddleBench offers three modes. **`score` is the default.** All three report reaction coverage; choose a more detailed mode when you want additional information about the predictions that did not match an eligible reaction.
+
+| Mode | What you get | When to choose it | Relative speed |
+| --- | --- | --- | --- |
+| **`coverage`** | **Reaction coverage:** how many distinct eligible reactions your predictions found, out of the known reactions for each starting structure. | You only want to know how many known reactions were discovered. | **Fastest** |
+| **`score` (default)** | **Coverage + a provisional score** that considers search time and detected known non-first-order saddle points. | You want a simple numerical comparison of searches without checking the entire diagnostic collection. | **Fast** |
+| **`score_detailed`** | **Coverage + a provisional score + information about other matching saddle points in the dataset that are not eligible reactions.** These may include known non-first-order saddles and other previously registered saddles. | You want to understand whether predictions that did not earn reaction credit resemble other known saddle points. | **More thorough, usually slower** |
+
+A reaction counts toward coverage only if it is eligible in the published reference. Finding several saddle structures for the same eligible reaction still counts as discovering one reaction.
+
+The numerical scores in `score` and `score_detailed` are **provisional**. They use the first confirmed match for each prediction and may not capture every competing reaction or diagnostic match. Consequently, these scores should not be treated as an exhaustive scientific classification or directly compared with scores calculated using a different matching policy. More details appear under [How matching and scoring work](#how-matching-and-scoring-work).
+
+## Installation
+
+SaddleBench requires Python 3.10 or newer. Run:
 
 ```bash
-# Default: greedy reactions then known non-first-order saddles, one CPU process
-python scripts/score_from_hf.py \
-  --case-id case0001 --submission predicted_saddles.traj \
-  --elapsed-seconds 3600 --output score.json
-
-# Greedy full-catalog first-hit classification (NOT canonical exhaustive W2)
-python scripts/score_from_hf.py --mode score_detailed \
-  --case-id case0001 --submission predicted_saddles.traj \
-  --elapsed-seconds 3600 --output score_detailed.json
-
-# Reaction coverage ONLY. No non-first-order or general diagnostics.
-python scripts/score_from_hf.py --mode coverage \
-  --case-id case0001 --submission predicted_saddles.traj \
-  --elapsed-seconds 3600 --output coverage.json
+git clone https://github.com/NathanNguyen67/saddlebench.git
+cd saddlebench
+python -m pip install -e .
+python -m pip install huggingface_hub
 ```
 
-`--elapsed-seconds` is the **search** duration, including unsuccessful attempts, **not** the scoring duration.
+Scoring runs on ordinary processor cores; a graphics processor is not required.
 
-### Controlling CPU parallelization
+## Quick start
 
-`--processes` defaults to **1 (no parallelism)** for all modes. For multiple cases, set `--processes 2`, `--processes 4`, etc. Work is parallelized **across independent cases**, not across saddle frames within a single case. A single `--case-id` uses one worker even if `--processes 4` is supplied. Excess workers beyond the number of cases bring no benefit. Each process can hold separate geometry and reference data in RAM, so choose concurrency according to your resource limits. `--microbatch-size` (default 16) independently controls NumPy vectorized MIC comparisons per first-hit step; it is **not** the CPU core count.
+**1. Select a starting structure.** Browse the [starting structures dataset](https://huggingface.co/datasets/traingletrain/saddlebench-prototype) and choose a case. For example, download `case0001`:
 
-For multiple cases, create `submission.csv` containing:
+```bash
+hf download traingletrain/saddlebench-prototype minima/case0001.traj \
+  --repo-type dataset --local-dir inputs
+```
+
+**2. Run your saddle-point search.** Use any method you want, starting from the downloaded structure. Save the predicted saddle geometries as an ASE trajectory file (`.traj`), with one frame for each prediction. Keep the same atoms in the same order and preserve the simulation cell and periodic boundary conditions. See [Submission format](docs/SUBMISSION_FORMAT.md) for requirements.
+
+**3. Score your predictions.** By default, this reports coverage and a provisional score:
+
+```bash
+python scripts/score_from_hf.py \
+  --case-id case0001 \
+  --submission predicted_saddles.traj \
+  --elapsed-seconds 3600 \
+  --output score.json
+```
+
+Change the mode with `--mode`:
+
+```bash
+# Coverage only: fastest option
+python scripts/score_from_hf.py \
+  --case-id case0001 --submission predicted_saddles.traj \
+  --elapsed-seconds 3600 --mode coverage --output coverage.json
+
+# Broader search for other known saddle points
+python scripts/score_from_hf.py \
+  --case-id case0001 --submission predicted_saddles.traj \
+  --elapsed-seconds 3600 --mode score_detailed --output detailed.json
+```
+
+`--elapsed-seconds` is the **time spent running your saddle-point search**, including attempts that produced no usable result. It is **not** the time SaddleBench takes to evaluate the predictions.
+
+SaddleBench downloads and verifies the public scoring reference automatically. It writes a JSON report to the path you provide and does not overwrite an existing output file. The predicted geometries remain on your machine.
+
+## Scoring multiple starting structures
+
+Make a file called `submission.csv` containing the case identifier, the trajectory path, and the total search time for each case:
 
 ```csv
 case_id,trajectory,elapsed_seconds
@@ -64,75 +89,59 @@ case0001,predictions_case0001.traj,3600
 case0002,predictions_case0002.traj,4800
 ```
 
-```bash
-# Two cases scored in parallel, using the default score mode
-python scripts/score_from_hf.py --submission-csv submission.csv \
-  --processes 2 --output batch_score.json
-
-# Detailed scorer can also parallelize over cases
-python scripts/score_from_hf.py --submission-csv submission.csv \
-  --mode score_detailed --processes 2 --output batch_score_detailed.json
-
-# Coverage only, serial, default --processes 1
-python scripts/score_from_hf.py --submission-csv submission.csv \
-  --mode coverage --output batch_coverage.json
-```
-
-Trajectory paths in the CSV are relative to the CSV directory. Outputs are never overwritten. See [Submission format](docs/SUBMISSION_FORMAT.md) for requirements.
-
-## Installing and scoring
-
-Python 3.10+ and ASE / NumPy are required. For published-reference downloads, also install `huggingface_hub`:
+Then run:
 
 ```bash
-python -m pip install -e .
-python -m pip install huggingface_hub
+python scripts/score_from_hf.py \
+  --submission-csv submission.csv \
+  --output batch_score.json
 ```
 
-The public starting-minimum dataset is [`traingletrain/saddlebench-prototype`](https://huggingface.co/datasets/traingletrain/saddlebench-prototype). The scoring reference is [`traingletrain/saddlebench-reference-private`](https://huggingface.co/datasets/traingletrain/saddlebench-reference-private). Both are public; the reference's `-private` suffix is part of its published name, not an authentication requirement. The pinned reference contains 123 cases, 2,387 eligible reaction identities and 83,529 diagnostic saddle records; counts are *dataset-wide*, not the number matched by any one submission. Published registry watermark is 23,134, registry SHA-256 `85d37e55448b544473b34e7bb244823e80ddc85091bbe6ae3e771c7beb4b0a41`.
-
-Download an example starting structure:
+To use more than one processor core for **different cases**, set `--processes`:
 
 ```bash
-hf download traingletrain/saddlebench-prototype minima/case0001.traj \
-  --repo-type dataset --local-dir inputs
+python scripts/score_from_hf.py \
+  --submission-csv submission.csv \
+  --mode score_detailed \
+  --processes 2 \
+  --output batch_detailed.json
 ```
 
-Scoring downloads/checks the public reference, checks each published SHA-256 and keeps predictions local. For offline scoring of an already published and verified HF reference snapshot, pass **both** `--reference-root PATH` and `--cases-csv PATH`. The latter is the published public `cases.csv`, not a submission manifest.
+**The default is `--processes 1`**, so scoring runs serially. Parallel processing divides separate cases among the requested workers; it does not divide a single case among cores. You can use `--processes 4` for four cases, for example, if your computer has sufficient memory. Relative trajectory paths in the spreadsheet are resolved relative to the spreadsheet file.
 
-### Output semantics and formula
+## Understanding the results
 
-For any mode with `K > 0`, the same *algebraic* provisional score shape is
-shown, `100*(U/K)^2*(U/(U+2*Bpreview))*(3600/search_seconds)` where `U` is the
-number of distinct **first-hit** reaction IDs and `Bpreview` is the number of
-distinct, known-start potential-bad groups encountered as first diagnostic
-hits. For `coverage`, `Bpreview=0` by definition because diagnostics are not
-searched. `score` tests known non-first-order; `score_detailed` also tests
-remaining diagnostic categories (including connected high-barrier) after
-known non-first-order misses. These different search domains produce
-different *provisional* scores.
+**Coverage** is the fraction of known eligible reactions discovered for a case. For example, discovering 4 distinct eligible reactions out of 10 gives 40% coverage; discovering the same reaction multiple times does not increase it.
 
-None of the three modes establishes authoritative W2 `known_bad_unique_B`; it
-is serialized as `null` in every quick case and batch report. The native W2
-`score_detailed` output is **not** retained under that name. All three modes
-return the versioned `saddlebench-quick-case-v1` or
-`saddlebench-quick-batch-v1` output with an explicit `mode` and
-`score_semantics`. This intentionally changes the `score_detailed` output
-format, while leaving the source reference, threshold and original W2 scorer
-implementation available for historical analyses.
+**The provisional score** also considers how long the search took and possible matches to certain saddle points that are not eligible reactions. A search that finds more distinct eligible reactions in less time generally receives a higher score. The different modes examine different sets of reference saddles, so their provisional scores are not necessarily identical.
 
-## Scientific reference and limitations
+**Other known saddle points** are why `score_detailed` exists. A predicted structure might not qualify for reaction credit but could still match a previously registered saddle. The detailed mode checks the broader reference collection and reports the first matching diagnostic category, when one is found. Not finding a match does not prove the prediction is incorrect or novel.
 
-The eligible reference uses a saddle force threshold of 0.005 eV/Å, DoubleMin endpoint thresholds of 0.0025 eV/Å, connected DoubleMin reactions and barriers strictly below 1.5 eV. Reference `all_saddles` mode accepts specified historical DoubleMin protocols; it is not simply every first-order registry saddle. Starting constraints are preserved for searches; saddle-to-saddle identity uses geometry and ignores fixed-atom metadata. Calculator/PES provenance is not independently verified, and the reference is not exhaustive. Unknown predictions are not automatically incorrect. Runtime is self-reported.
+### How matching and scoring work
 
-All three modes return first-hit entries instead of complete diagnostic identity lists; `score_detailed` searches the full catalog but is **not** exhaustive. The original full scorer remains available as source code for separate historical W2 rescoring. No greedy mode reports complete `entries[].matched_saddle_groups` populations.
+SaddleBench compares saddle geometries within the same starting-structure and simulation-cell scope. A match must pass the same exact geometric criterion in every mode: a maximum core-drift displacement of **0.2 angstrom or less**. Atom order and periodic boundary conditions must be compatible. Matching is based on geometry, not on reaction-network connectivity inferred from atom bonds.
+
+To keep evaluation fast, the scorer groups nearby reference structures and checks likely matches first. **It stops after the first confirmed match for a prediction.** Eligible reaction matches take priority over matches to other saddle-point categories. `score` checks known non-first-order saddles when no eligible reaction was found; `score_detailed` additionally searches the remaining diagnostic categories.
+
+This stopping rule makes scoring faster, but it has an important limitation: a single prediction may resemble more than one reference reaction or saddle category. The reports do **not** list all such possibilities and do **not** determine an exhaustive count of bad saddle identities. Their provisional scores should therefore be interpreted as quick comparisons, not exhaustive classifications.
+
+For users comparing results across multiple cases, the reported score also uses the **search times you supply**, not a timing measured by SaddleBench.
+
+## Scope and limitations
+
+The published reference includes reactions meeting its criteria for verified saddle and endpoint optimizations, connectivity, and an energy barrier strictly below 1.5 electronvolts. Not every previously registered saddle is an eligible reaction. The reference is not an exhaustive list of all possible reactions or saddles, and its potential-energy-model provenance has not been independently verified. Results from different energy models may not be comparable.
+
+The benchmark is an openly available research resource rather than an independently certified leaderboard. Unknown predictions are not automatically wrong, and the results do not establish that every possible reaction has been discovered.
 
 ## Tests
 
+To test the installed scoring software, install `pytest` and run:
+
 ```bash
+python -m pip install pytest
 python -m pytest -q
 ```
 
-Tests verify software and fixed sample references; they do not independently certify scientific reference completeness. The greedy full computation was already benchmarked on Saskatchewan in the preceding experimental sweep. This release changes only the public mode routing, output labelling and packaging; no new Saskatchewan performance sweep is required by this handoff.
+The tests check software behavior and example fixtures; they do not establish that the published scientific reference is complete.
 
-**Legacy CLI note:** `saddlebench score` (the older installed subcommand consuming extxyz and a local reference path) is separate from this published Hugging Face `.traj` scoring interface and has **not** been repurposed. Select `score`, `score_detailed`, or `coverage` with `--mode` on `scripts/score_from_hf.py`, as shown above. This avoids silently changing existing extxyz API behavior.
+**Other interface:** The separately installed `saddlebench score` command supports a local-reference/extxyz workflow. The `score`, `score_detailed`, and `coverage` settings documented above are selected with `--mode` in `scripts/score_from_hf.py` for the public dataset workflow.
