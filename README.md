@@ -111,6 +111,14 @@ python scripts/score_from_hf.py \
 
 ### Comparing different models on the same starting structure
 
+**Leaderboard display:** `CASE` shows only the numeric suffix of the published
+case ID (`case0006` -> `6`). `DATASET` is the uppercase namespace prefix of
+the case's published `structure_id` (for example, `oc20:...` -> `OC20`). If
+no dataset namespace is available, the table shows `-` rather than guessing.
+The input CSV still uses full identifiers such as `case0006`; only terminal
+presentation changes. All matching and score calculations are unchanged.
+
+
 Add an optional `model` column to the same `submission.csv`. One row is one
 **(model, case)** submission; different models may score the same case. The
 `model` label is for reporting only and does not affect matching or scoring.

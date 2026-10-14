@@ -37,7 +37,23 @@ def _confidence(case, metadata):
     return value if value is not None and 0 <= value <= 1 else None
 
 
-def _cells(case, mode, confidence):
+# dataset-and-short-case-table-v1
+# Shortening a case ID changes presentation only; matching uses the full ID.
+def _short_case(case_id):
+    value = str(case_id or '?')
+    suffix = value[4:] if value.startswith('case') else ''
+    return str(int(suffix)) if suffix.isdigit() else value
+
+
+def _dataset(case, metadata):
+    structure_id = case.get('structure_id') or (metadata.get(case.get('case_id')) or {}).get('structure_id')
+    if not isinstance(structure_id, str):
+        return '-'
+    prefix, separator, remainder = structure_id.partition(':')
+    return prefix.upper() if prefix and separator and remainder else '-'
+
+
+def _cells(case, mode, confidence, dataset):
     entries = case.get('entries')
     entries = entries if isinstance(entries, list) else None
     stages = Counter(e.get('stage') or 'unmatched' for e in (entries or []))
@@ -56,6 +72,8 @@ def _cells(case, mode, confidence):
     return {
         'model': str(case.get('model') or 'default'),
         'case': str(case.get('case_id') or '?'),
+        'short_case': _short_case(case.get('case_id')),
+        'dataset': dataset,
         'n': str(len(entries)) if entries is not None else '-',
         'uk': f'{u}/{k}' if u is not None and k is not None else '-',
         'cov': f'{100*cov:.1f}' if cov is not None else '-',
@@ -99,24 +117,24 @@ def render_summary(report, *, cases_csv=None, color=None):
     cases = report.get('case_results')
     if cases is None:
         cases = [report]
-    rows = [_cells(c, mode, _confidence(c, metadata)) for c in cases]
+    rows = [_cells(c, mode, _confidence(c, metadata), _dataset(c, metadata)) for c in cases]
     grouped = defaultdict(list)
     for row in rows:
         grouped[row['case']].append(row)
     case_count = len(grouped)
     model_count = len({r['model'] for r in rows})
-    lines = ['', '=' * 112,
+    lines = ['', '=' * 126,
              f' SADDLEBENCH | {mode} | {len(rows)} submissions | {case_count} case(s) | {model_count} model(s)',
-             '=' * 112]
+             '=' * 126]
 
     # All percentages and colored cells are derived from existing JSON values.
-    columns = [('#', 2, 'rank'), ('MODEL', 19, 'model'), ('CASE', 8, 'case'),
+    columns = [('#', 2, 'rank'), ('MODEL', 19, 'model'), ('DATASET', 9, 'dataset'), ('CASE', 5, 'short_case'),
                ('N', 4, 'n'), ('U/K', 6, 'uk'), ('COV%', 6, 'cov'),
                ('CONF%', 6, 'conf'), ('HIT', 4, 'hit'), ('DUP', 4, 'dup'),
                ('NF', 3, 'nf'), ('HB', 3, 'hb'), ('OTH', 3, 'oth'),
                ('UNM', 3, 'unm'), ('B', 3, 'bad'), ('SEC', 5, 'time'),
                ('S/H', 7, 'score')]
-    hdr = ' '.join(name.rjust(width) if key not in ('model','case') else name.ljust(width)
+    hdr = ' '.join(name.rjust(width) if key not in ('model','case','short_case','dataset') else name.ljust(width)
                    for name,width,key in columns)
     lines.append(_ansi(hdr, '1;36', color))
     lines.append('-' * len(hdr))
@@ -128,7 +146,7 @@ def render_summary(report, *, cases_csv=None, color=None):
             for name, width, key in columns:
                 value = str(i) if key == 'rank' else row[key]
                 value = _clip(value, width)
-                cell = value.ljust(width) if key in ('model','case') else value.rjust(width)
+                cell = value.ljust(width) if key in ('model','case','short_case','dataset') else value.rjust(width)
                 if key == 'cov' and row['_cov'] is not None:
                     # Color bands are strictly visual, not scientific thresholds.
                     cell = _ansi(cell, '32' if row['_cov'] >= .9 else '33' if row['_cov'] >= .5 else '31', color)
