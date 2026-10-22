@@ -13,19 +13,26 @@ You can score results on your own computer. SaddleBench does not run the searche
 
 **Both datasets are public.** The word `private` in the second dataset's address is part of its name; you do not need permission to download it. These counts describe the currently published collection, not the number of reactions in any single starting structure.
 
-## Choose what to measure
+## Scoring interface
 
-SaddleBench offers three modes. **`score` is the default.** All three report reaction coverage; choose a more detailed mode when you want additional information about the predictions that did not match an eligible reaction.
+**`saddlebench score` is the default public interface.** It scores predictions at
+three independently rerun, published maxdev cutoffs: **0.20, 0.10 and 0.05 Å**.
+The terminal displays a colored **per-dataset leaderboard**, coverage, the
+median selected-reference maxdev across all matched predictions (including
+repeats), and the median of each discovered reaction's best observed selected
+match. This is **not** exhaustive nearest-reference geometry matching.
 
-| Mode | What you get | When to choose it | Relative speed |
-| --- | --- | --- | --- |
-| **`coverage`** | **Reaction coverage:** how many distinct eligible reactions your predictions found, out of the known reactions for each starting structure. | You only want to know how many known reactions were discovered. | **Fastest** |
-| **`score` (default)** | **Coverage + a provisional score** that considers search time and detected known non-first-order saddle points. | You want a simple numerical comparison of searches without checking the entire diagnostic collection. | **Fast** |
-| **`score_detailed`** | **Coverage + a provisional score + information about other matching saddle points in the dataset that are not eligible reactions.** These may include known non-first-order saddles and other previously registered saddles. | You want to understand whether predictions that did not earn reaction credit resemble other known saddle points. | **More thorough, usually slower** |
+The command writes a native JSON report, standalone HTML, and dataset SVG/PNG
+figures (PNG where a supported rasterizer is available). It does not automatically
+open an X11 viewer; use `--open-image` if desired. The model is ranked only when
+all submitted models evaluated identical case sets. All colors are for display,
+not scientific classification. Searches happen outside SaddleBench.
 
-A reaction counts toward coverage only if it is eligible in the published reference. Finding several saddle structures for the same eligible reaction still counts as discovering one reaction.
-
-The numerical scores in `score` and `score_detailed` are **provisional**. They use the first confirmed match for each prediction and may not capture every competing reaction or diagnostic match. Consequently, these scores should not be treated as an exhaustive scientific classification or directly compared with scores calculated using a different matching policy. More details appear under [How matching and scoring work](#how-matching-and-scoring-work).
+The older provisional-score and diagnostic classifier is available explicitly via
+`saddlebench provisional-score`. The original local-reference extxyz scorer is
+`saddlebench legacy-score`. For backward compatibility, `saddlebench score`
+with an explicit `--mode score|score_detailed|coverage` invokes the earlier
+Hugging Face scorer, and `--reference` invokes the original local scorer.
 
 ## Installation
 
@@ -35,10 +42,9 @@ SaddleBench requires Python 3.10 or newer. Run:
 git clone https://github.com/NathanNguyen67/saddlebench.git
 cd saddlebench
 python -m pip install -e .
-python -m pip install huggingface_hub
 ```
 
-Scoring runs on ordinary processor cores; a graphics processor is not required.
+Scoring runs on ordinary processor cores; a graphics processor is not required. After installation, `saddlebench` works from any directory with the installed Python environment active.
 
 ## Quick start
 
@@ -51,28 +57,27 @@ hf download traingletrain/saddlebench-prototype minima/case0001.traj \
 
 **2. Run your saddle-point search.** Use any method you want, starting from the downloaded structure. Save the predicted saddle geometries as an ASE trajectory file (`.traj`), with one frame for each prediction. Keep the same atoms in the same order and preserve the simulation cell and periodic boundary conditions. See [Submission format](docs/SUBMISSION_FORMAT.md) for requirements.
 
-**3. Score your predictions.** By default, this reports coverage and a provisional score:
+**3. Score your predictions.** By default this displays the **colored
+three-tolerance coverage/geometry leaderboard** and saves JSON, HTML, and SVG/PNG:
 
 ```bash
-python scripts/score_from_hf.py \
+saddlebench score \
   --case-id case0001 \
   --submission predicted_saddles.traj \
   --elapsed-seconds 3600 \
-  --output score.json
+  --output results.json
 ```
 
-Change the mode with `--mode`:
+For a purely terminal/JSON evaluation, add `--no-html --no-image`.
+To force ANSI color in a piped terminal add `--color`; `--open-image` requests
+an X11 viewer when available. Your predictions remain on your machine.
+
+To reproduce the **earlier, separate provisional-score method**, run:
 
 ```bash
-# Coverage only: fastest option
-python scripts/score_from_hf.py \
+saddlebench provisional-score \
   --case-id case0001 --submission predicted_saddles.traj \
-  --elapsed-seconds 3600 --mode coverage --output coverage.json
-
-# Broader search for other known saddle points
-python scripts/score_from_hf.py \
-  --case-id case0001 --submission predicted_saddles.traj \
-  --elapsed-seconds 3600 --mode score_detailed --output detailed.json
+  --elapsed-seconds 3600 --mode score --output provisional.json
 ```
 
 `--elapsed-seconds` is the **time spent running your saddle-point search**, including attempts that produced no usable result. It is **not** the time SaddleBench takes to evaluate the predictions.
@@ -92,7 +97,7 @@ case0002,predictions_case0002.traj,4800
 Then run:
 
 ```bash
-python scripts/score_from_hf.py \
+saddlebench score \
   --submission-csv submission.csv \
   --output batch_score.json
 ```
@@ -100,7 +105,7 @@ python scripts/score_from_hf.py \
 To use more than one processor core for **different cases**, set `--processes`:
 
 ```bash
-python scripts/score_from_hf.py \
+saddlebench score \
   --submission-csv submission.csv \
   --mode score_detailed \
   --processes 2 \
@@ -132,7 +137,7 @@ ForceBank-Fourier,case0022,forcebank_case0022.traj,1050
 ```
 
 ```bash
-python scripts/score_from_hf.py \
+saddlebench score \
   --submission-csv submission.csv --mode score_detailed \
   --processes 2 --output comparison.json
 ```
@@ -280,3 +285,35 @@ python -m pytest -q
 The tests check software behavior and example fixtures; they do not establish that the published scientific reference is complete.
 
 **Other interface:** The separately installed `saddlebench score` command supports a local-reference/extxyz workflow. The `score`, `score_detailed`, and `coverage` settings documented above are selected with `--mode` in `scripts/score_from_hf.py` for the public dataset workflow.
+
+### Experimental greedy coverage tiers (separate read-only CLI)
+
+The normal `scripts/score_from_hf.py` scoring modes and JSON outputs remain unchanged.
+Use `scripts/coverage_tiers_from_hf.py` with the same model-labeled (or legacy)
+submission CSV to evaluate **eligible-reaction greedy coverage** independently
+at core-drift maxdev cutoffs of 0.20, 0.10 and 0.05 Angstrom. No non-FO or
+other diagnostic catalog matching is performed. The same verified Hugging Face
+reference, eligible reactions, indexes, and case scoping are used.
+
+```bash
+PYTHONPATH="$HOME/saddlemill_jobs/saddlebench_published" \
+/home/ndn454/fairchem_audit_222_223/venvs/fairchem222/bin/python \
+"$HOME/saddlemill_jobs/saddlebench_published/scripts/coverage_tiers_from_hf.py" \
+  --submission-csv "$HOME/saddlemill_jobs/sb_score_demo_20261014T164830Z/submission.csv" \
+  --processes 2 --output "$HOME/saddlemill_jobs/coverage_tiers_$(date +%s).json"
+```
+
+`--view case` prints individual starting minima; model view is the default.
+`COV@.20`, `COV@.10`, and `COV@.05` are **micro** coverage at three
+independently rerun greedy first-hit thresholds. Macro coverage is in the
+separate diagnostic JSON. `MED-G` (Angstrom) is the median selected-reference
+maxdev of the FIRST credited prediction for each reaction at 0.20 A.
+`MED-BESTG` is the median, over credited reactions, of the LOWEST observed
+selected-reference maxdev across all predictions greedily assigned that
+reaction. It does NOT exhaust the nearest reference geometry per prediction.
+Neither median includes unmatched reactions. Each tier's own median is also
+in the diagnostic JSON. The new diagnostic JSON schema is
+`saddlebench-greedy-coverage-tiers-v1` and is NOT the native quick-score schema.
+Existing `score`, `score_detailed`, and `coverage` scientific definitions and
+thresholds are unchanged. This is a new experimental evaluation metric, not
+independent proof of stationary-point validity or DoubleMin connectedness.
