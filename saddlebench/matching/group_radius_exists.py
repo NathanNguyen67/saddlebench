@@ -1,7 +1,7 @@
 """Exact, scope-preserving, group-radius existence queries (experimental).
 
 Only the certified periodic relative-coordinate metric is used for group
-rejection. The scientific match is *always* frozen core-drift maxdev <=0.2 A.
+rejection. Original scoring stays frozen at 0.2 A; the separate coverage-tier diagnostic may query narrower thresholds.
 A pinned registry group ID is a partition label, NEVER proof of its radius.
 All radii are computed from the geometries, and incompatible keys are not pruned.
 """
@@ -111,12 +111,14 @@ class GroupCatalog:
                 self.features.append((p[loc]-p[0]).reshape(-1))
             except (ValueError,KeyError,TypeError,IndexError):self.features.append(None)
 
-    def find_first(self,query,*,batch_size=16,order='near',member_order='original',group_prune=True):
+    def find_first(self,query,*,batch_size=16,order='near',member_order='original',group_prune=True,threshold=T):
         if not 1<=batch_size<=256:raise ValueError('BATCH_OUT_OF_RANGE')
+        if type(threshold) not in (int,float) or not math.isfinite(threshold) or not 0<threshold<=T:
+            raise ValueError('GREEDY_THRESHOLD_OUT_OF_RANGE')
         if order not in ('original','near'):raise ValueError('ORDER_INVALID')
         if member_order not in ('original','anchor_rank'):raise ValueError('MEMBER_ORDER_INVALID')
         if not self.geoms:return {'found':False,'exact':0,'batch_calls':0,'mic_calls':0,'groups_rejected':0,'groups_tested':0,'anchor_survivors':0,'candidate_refs':0,'fallback':0,'uncertified':0}
-        anchor=self.anchor.possible(query,T)
+        anchor=self.anchor.possible(query,threshold)
         # Run one vectorized anchor filter per query, then cheap group-radius
         # checks. No exact MIC is spent on a certified rejected group.
         key=_geom_key(query)
@@ -130,7 +132,7 @@ class GroupCatalog:
                 try:
                     d=relative_metric(query,self.geoms[center])
                     stats['rep_metric_calls']+=1
-                    if d>float(radius)+T+GUARD:
+                    if d>float(radius)+threshold+GUARD:
                         stats['groups_rejected']+=1
                         stats['refs_rejected_group']+=len(viable)
                         continue
@@ -164,7 +166,7 @@ class GroupCatalog:
                 if key is None or self.keys[j]!=key:
                     stats['exact']+=1;stats['fallback']+=1
                     try:
-                        if geom.core_drift_maxdev(query,self.geoms[j])<=T+1e-12:
+                        if geom.core_drift_maxdev(query,self.geoms[j])<=threshold+1e-12:
                             stats['found']+=1;stats['match_index']=j;return dict(stats)
                     except (ValueError,TypeError,OverflowError,IndexError,np.linalg.LinAlgError,FloatingPointError):
                         stats['uncertain_scalar']+=1
@@ -175,7 +177,7 @@ class GroupCatalog:
                 if len(block)==1 or batch_size==1:
                     stats['exact']+=1;stats['fallback']+=1
                     try:
-                        if geom.core_drift_maxdev(query,self.geoms[j])<=T+1e-12:
+                        if geom.core_drift_maxdev(query,self.geoms[j])<=threshold+1e-12:
                             stats['found']+=1;stats['match_index']=j;return dict(stats)
                     except (ValueError,TypeError,OverflowError,IndexError,np.linalg.LinAlgError,FloatingPointError):
                         stats['uncertain_scalar']+=1
@@ -193,20 +195,20 @@ class GroupCatalog:
                     for ii in block:
                         stats['exact']+=1;stats['fallback']+=1
                         try:
-                            if geom.core_drift_maxdev(query,self.geoms[ii])<=T+1e-12:
+                            if geom.core_drift_maxdev(query,self.geoms[ii])<=threshold+1e-12:
                                 stats['found']+=1;stats['match_index']=ii;return dict(stats)
                         except (ValueError,TypeError,OverflowError,IndexError,np.linalg.LinAlgError,FloatingPointError):
                             stats['uncertain_scalar']+=1
                     continue
                 stats['exact']+=len(block);stats['batch_calls']+=1;stats['packed']+=len(block)
                 for ii,dist in zip(block,distances):
-                    if abs(float(dist)-T)<1e-8:
+                    if abs(float(dist)-threshold)<1e-8:
                         stats['exact']+=1;stats['fallback']+=1
                         try:
-                            if geom.core_drift_maxdev(query,self.geoms[ii])<=T+1e-12:
+                            if geom.core_drift_maxdev(query,self.geoms[ii])<=threshold+1e-12:
                                 stats['found']+=1;stats['match_index']=ii;return dict(stats)
                         except (ValueError,TypeError,OverflowError,IndexError,np.linalg.LinAlgError,FloatingPointError):
                             stats['uncertain_scalar']+=1
-                    elif float(dist)<=T:
+                    elif float(dist)<=threshold:
                         stats['found']+=1;stats['match_index']=ii;return dict(stats)
         return dict(stats)
