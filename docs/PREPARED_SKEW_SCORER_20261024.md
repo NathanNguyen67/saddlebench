@@ -1,0 +1,13 @@
+# SaddleBench scorer, prepared skew MIC — 2026-10-24
+
+**Change type:** performance/resource and code simplification. No change to maxdev, the twice-applied minimum-image convention, half-core selection, drift subtraction, thresholds (0.2 Å first-hit; existing coverage diagnostics), reaction identities, output schemas, or registry scoping.
+
+The default `saddlebench score --mode score` group-catalog matcher runs 16-pair batched `_measure_packed`. It now uses `prepare_geometry(query)` once per comparable query and `_mic_prepared` for both displacement-MIC passes, including skew cells. The skew preparation caches the periodic cell basis, singular-value certificate constants, projection, image offsets, and QR fallback factors; per-displacement closest-vector selection and numerical certificates remain dynamic. Both prepared and unprepared paths share `_certified_skew_mic` and `_qr_sphere_mic`; there are **not** two independent scientific skew solvers.
+
+The public `batch_exact.py` contains *only* the current exact microbatch kernel; the obsolete all-pairs matrix/precompute implementation has been deleted. The optional pair-distance signature filter is now `auto` by default for reference catalogs with at least 64 members. Its persisted artifacts reside under the established first-hit index cache and are keyed by pinned ordered geometry contents. Exact maxdev remains mandatory for survivors. Set `SADDLEBENCH_SIGNATURE_FILTER=off` to compare with the old anchor-rejection approach; this does not change science.
+
+Performance evidence: Saskatoon, skewed case0006/case0022 16-pair fixtures, warm prepared contexts, medians: case0006 1.639 ms -> 1.401 ms (~1.17×), case0022 1.295 ms -> 1.079 ms (~1.20×). Parity exact on these fixtures; 46 focused tests passed on Saskatoon. **These are kernel measurements, not end-to-end scoring speedups**. Each preparation cost was about 0.9 ms; repeated cell/query preparation may reduce the full-score benefit.
+
+`score_saskatoon_cases.sh` is the simple public-scoring wrapper for the two user trajectories already transferred from Saskatchewan, using the `localhost` CPU Slurm partition and the lab's authoritative Python. It prints wall time, case scores, matching times, cache state and optionally verifies parity to the prior warm-signature run's scientific JSON. It does not modify the active Hugging Face scoring reference.
+
+No legacy benchmark implementation is shipped as a second scorer or installed alongside this source. Historical public CLI modes that remain active are not deleted without a separate caller migration; their scientific behavior is unchanged.

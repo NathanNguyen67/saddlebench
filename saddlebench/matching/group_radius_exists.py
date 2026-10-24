@@ -7,7 +7,7 @@ All radii are computed from the geometries, and incompatible keys are not pruned
 """
 from __future__ import annotations
 from collections import Counter,defaultdict
-import hashlib,json,math
+import hashlib,json,math,os
 import numpy as np
 from saddlebench.matching import geometry as geom
 from saddlebench.matching.metric_groups import relative_metric
@@ -97,12 +97,35 @@ def validate_index(index,members):
 
 class GroupCatalog:
     """Group-prune, order by representative, exact microbatch, exit on first hit."""
-    def __init__(self,members,index):
+    def __init__(self,members,index,signature_cache_root=None):
         validate_index(index,members)
         self.geoms=[m['geometry'] for _,m in members]
         self.index=index
         self.keys=[_geom_key(g) for g in self.geoms]
         self.anchor=geom.BatchedAnchorFilter(self.geoms,lambda g:g)
+        # Lazy immutable preparation: never pre-copy references excluded by
+        # the conservative filters, and never prepare the same reference twice.
+        self._prepared_refs={}
+
+        # off / on / auto: auto replaces the old anchor pass when the catalog
+        # is large enough to amortize persistent signature preparation.
+        policy=os.environ.get('SADDLEBENCH_SIGNATURE_FILTER','auto').lower()
+        if policy not in ('off','on','auto'):
+            raise ValueError('SIGNATURE_FILTER_MODE_INVALID')
+        self.signature=None
+        self.signature_cache_state='DISABLED'
+        if (signature_cache_root is not None and
+                (policy=='on' or (policy=='auto' and len(self.geoms)>=64))):
+            from saddlebench.matching.pair_signature import PersistentPairSignatures
+            try:
+                self.signature=PersistentPairSignatures(self.geoms,index['source_sha256'],signature_cache_root)
+                self.signature_cache_state=self.signature.state
+            except (OSError,ValueError,KeyError,TypeError,IndexError,OverflowError,
+                    np.linalg.LinAlgError,FloatingPointError):
+                # Performance cache must never turn a valid score into failure.
+                # Fall back to the proven existing anchor filter.
+                self.signature=None
+                self.signature_cache_state='FALLBACK_ANCHOR'
         self.features=[]
         for g in self.geoms:
             try:
@@ -118,11 +141,16 @@ class GroupCatalog:
         if order not in ('original','near'):raise ValueError('ORDER_INVALID')
         if member_order not in ('original','anchor_rank'):raise ValueError('MEMBER_ORDER_INVALID')
         if not self.geoms:return {'found':False,'exact':0,'batch_calls':0,'mic_calls':0,'groups_rejected':0,'groups_tested':0,'anchor_survivors':0,'candidate_refs':0,'fallback':0,'uncertified':0}
-        anchor=self.anchor.possible(query,threshold)
+        if self.signature is not None:
+            anchor=self.signature.possible(query,threshold)
+            signature_rejected=int(len(anchor)-np.count_nonzero(anchor))
+        else:
+            anchor=self.anchor.possible(query,threshold)
+            signature_rejected=0
         # Run one vectorized anchor filter per query, then cheap group-radius
         # checks. No exact MIC is spent on a certified rejected group.
         key=_geom_key(query)
-        queue=[];stats=Counter({'anchor_survivors':int(np.count_nonzero(anchor))})
+        queue=[];stats=Counter({'anchor_survivors':int(np.count_nonzero(anchor)),'signature_rejected':signature_rejected})
         for group in self.index['groups']:
             ids=group['members']
             viable=[i for i in ids if anchor[i]]
@@ -149,7 +177,23 @@ class GroupCatalog:
             qfeature=(qpos[loc]-qpos[0]).reshape(-1)
         except (ValueError,KeyError,TypeError,IndexError):qfeature=None
         qarr=None
-        if key is not None:qarr=np.asarray([query['positions_angstrom']],dtype=np.float64)
+        prepared_query=None
+        if key is not None:
+            qarr=np.asarray([query['positions_angstrom']],dtype=np.float64)
+            try:
+                prepared_query=geom.prepare_geometry(query)
+            except (ValueError,TypeError,IndexError,OverflowError,np.linalg.LinAlgError,FloatingPointError):
+                # Fail open to the original scalar canonical path.
+                prepared_query=None
+
+        def scalar_distance(j):
+            if prepared_query is None:
+                return geom.core_drift_maxdev(query,self.geoms[j])
+            ref=self._prepared_refs.get(j)
+            if ref is None:
+                ref=geom.prepare_geometry(self.geoms[j])
+                self._prepared_refs[j]=ref
+            return geom.core_drift_maxdev_prepared(prepared_query,ref)
         # count genuine exact evaluations, including speculative microbatch work
         for _,_,viable,center in queue:
             stats['groups_tested']+=1
@@ -166,7 +210,7 @@ class GroupCatalog:
                 if key is None or self.keys[j]!=key:
                     stats['exact']+=1;stats['fallback']+=1
                     try:
-                        if geom.core_drift_maxdev(query,self.geoms[j])<=threshold+1e-12:
+                        if scalar_distance(j)<=threshold+1e-12:
                             stats['found']+=1;stats['match_index']=j;return dict(stats)
                     except (ValueError,TypeError,OverflowError,IndexError,np.linalg.LinAlgError,FloatingPointError):
                         stats['uncertain_scalar']+=1
@@ -177,7 +221,7 @@ class GroupCatalog:
                 if len(block)==1 or batch_size==1:
                     stats['exact']+=1;stats['fallback']+=1
                     try:
-                        if geom.core_drift_maxdev(query,self.geoms[j])<=threshold+1e-12:
+                        if scalar_distance(j)<=threshold+1e-12:
                             stats['found']+=1;stats['match_index']=j;return dict(stats)
                     except (ValueError,TypeError,OverflowError,IndexError,np.linalg.LinAlgError,FloatingPointError):
                         stats['uncertain_scalar']+=1
@@ -188,14 +232,14 @@ class GroupCatalog:
                     cell=np.asarray(query['cell_angstrom'],float)
                     from saddlebench.matching import batch_exact
                     mic_before=batch_exact._STATS['mic_calls']
-                    distances=_measure_packed(ids,qarr,ra,cell,query['pbc'])
+                    distances=_measure_packed(ids,qarr,ra,cell,query['pbc'],prepared=prepared_query)
                     stats['mic_calls']+=batch_exact._STATS['mic_calls']-mic_before
                     if len(distances)!=len(block) or not np.isfinite(distances).all():raise ValueError('BAD_BATCH')
                 except (ValueError,TypeError,OverflowError,IndexError,np.linalg.LinAlgError,FloatingPointError):
                     for ii in block:
                         stats['exact']+=1;stats['fallback']+=1
                         try:
-                            if geom.core_drift_maxdev(query,self.geoms[ii])<=threshold+1e-12:
+                            if scalar_distance(ii)<=threshold+1e-12:
                                 stats['found']+=1;stats['match_index']=ii;return dict(stats)
                         except (ValueError,TypeError,OverflowError,IndexError,np.linalg.LinAlgError,FloatingPointError):
                             stats['uncertain_scalar']+=1
@@ -205,7 +249,7 @@ class GroupCatalog:
                     if abs(float(dist)-threshold)<1e-8:
                         stats['exact']+=1;stats['fallback']+=1
                         try:
-                            if geom.core_drift_maxdev(query,self.geoms[ii])<=threshold+1e-12:
+                            if scalar_distance(ii)<=threshold+1e-12:
                                 stats['found']+=1;stats['match_index']=ii;return dict(stats)
                         except (ValueError,TypeError,OverflowError,IndexError,np.linalg.LinAlgError,FloatingPointError):
                             stats['uncertain_scalar']+=1

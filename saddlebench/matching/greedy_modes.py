@@ -5,7 +5,7 @@ reaction ambiguity and diagnostic-group enumeration. A greedy known-bad flag
 is not a certified W2 penalty. No canonical metrics are relabeled.
 """
 from __future__ import annotations
-import hashlib,json,os,tempfile,time
+import hashlib,json,os,sys,tempfile,time
 from collections import Counter,defaultdict
 from pathlib import Path
 
@@ -62,8 +62,11 @@ class Stage:
             index=pinned_index
             self.provenance={'state':'VERIFIED_PRIOR_ELIGIBLE_CACHE',
                              'groups':len(index['groups']),'members':len(members)}
-        self.catalog=GroupCatalog(members,index)
+        self.catalog=GroupCatalog(members,index,signature_cache_root=Path(cache)/'pair_signature_v1')
         self.provenance['load_seconds']=time.perf_counter()-start
+        self.provenance['pair_signature_cache']=self.catalog.signature_cache_state
+        if os.environ.get('SADDLEBENCH_SIGNATURE_TRACE')=='1':
+            print('SIGNATURE_CACHE_STATE='+self.catalog.signature_cache_state, file=sys.stderr, flush=True)
         self.stats=Counter()
 
     def find(self,geometry,batch_size):

@@ -14,46 +14,47 @@ def _image_shifts(dim, radius):
     return values
 
 
-def _certified_skew_mic(arr,basis):
-    """Exact-CVP candidate vectors when a Euclidean lower bound certifies them.
+def _certified_skew_mic(arr,basis,*,prepared=None):
+    """Exact-CVP enumeration with optional immutable skew-cell preparation.
 
-    Return None to invoke the unchanged QR sphere decoder for nearly singular,
-    extreme, boundary/tied or impractically wide lattice searches.
+    The original certified radius, numerical guards, and tie handling apply
+    identically with or without cell-dependent factors supplied in advance.
+    Return None when the unchanged QR sphere decoder must decide.
     """
     if not len(arr):return arr.copy()
     if arr.ndim!=2 or arr.shape[1]!=3 or not np.isfinite(arr).all():return None
     try:
-        singular=np.linalg.svd(basis,compute_uv=False)
-        sigma=float(singular[-1])
-        scale=float(singular[0])
-        if (not np.isfinite(sigma) or sigma<=1e-10*max(scale,1.0)
-                or scale/sigma>20.):
-            return None
-        gram=basis.T@basis
-        fractional=np.linalg.solve(gram,(arr@basis).T).T
+        if prepared is None:
+            singular=np.linalg.svd(basis,compute_uv=False)
+            sigma=float(singular[-1])
+            scale=float(singular[0])
+            if (not np.isfinite(sigma) or sigma<=1e-10*max(scale,1.0)
+                    or scale/sigma>20.):
+                return None
+            gram=basis.T@basis
+            fractional=np.linalg.solve(gram,(arr@basis).T).T
+        else:
+            if prepared.projection is None:return None
+            sigma,scale=prepared.sigma,prepared.scale
+            fractional=arr@prepared.projection
         if not np.isfinite(fractional).all() or np.max(np.abs(fractional))>=1e6:
             return None
         center=np.rint(fractional)
         residual=arr-center@basis.T
-        # radius 1 is the 3x3x3 neighborhood. Expand only when the
-        # singular-value lower bound cannot certify all nearest images.
         for radius in (1,2,3):
             shifts=_image_shifts(basis.shape[1],radius)
             if len(arr)*len(shifts)>150000:return None
-            images=shifts@basis.T
+            images=(shifts@basis.T if prepared is None
+                    else prepared.image_offsets[radius-1])
             differences=residual[:,None,:]-images[None,:,:]
             norms_sq=np.einsum('ijk,ijk->ij',differences,differences)
             best_index=np.argmin(norms_sq,axis=1)
             best_sq=norms_sq[np.arange(len(arr)),best_index]
             if not np.isfinite(best_sq).all():return None
             lower=sigma*(radius+0.5)
-            # A lattice translate outside [-radius,radius]^m must be at
-            # least sigma*(radius+0.5) away from the fractional point.
-            # Keep generous numerical guards around the certification.
             epsilon=1e-9*(1.+scale+np.max(np.abs(arr)))
             if not np.all(np.sqrt(best_sq)+epsilon < lower):
                 continue
-            # Original decoder's tie-breaking remains authoritative.
             two_smallest=np.partition(norms_sq,1,axis=1)[:,:2]
             if np.any(two_smallest[:,1]-two_smallest[:,0] <
                       1e-10*(1.+two_smallest[:,0])):
@@ -92,7 +93,15 @@ def _mic(displacements,cell,pbc):
         accelerated=_certified_skew_mic(arr,basis)
         if accelerated is not None:return accelerated
     q,r=np.linalg.qr(basis,mode='reduced')
-    if len(periodic[periodic]) and any(abs(r[i,i])<1e-11 for i in range(r.shape[0])):
+    return _qr_sphere_mic(arr,basis,q,r)
+
+
+def _qr_sphere_mic(arr,basis,q,r):
+    """The original exact QR sphere decoder, also used with cached Q/R.
+
+    Preserve enumeration order, Babai bound, numerical tolerances and ties.
+    """
+    if any(abs(r[i,i])<1e-11 for i in range(r.shape[0])):
         raise ValueError('DEGENERATE_PERIODIC_CELL')
     coords=arr@q
     result=[]
@@ -153,6 +162,18 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True, eq=False)
+class PreparedSkewMIC:
+    """Immutable cell-dependent factors for the unchanged skew MIC solver."""
+    basis: np.ndarray
+    q: np.ndarray
+    r: np.ndarray
+    projection: np.ndarray | None
+    sigma: float | None
+    scale: float | None
+    image_offsets: tuple
+
+
+@dataclass(frozen=True, eq=False)
 class PreparedGeometry:
     numbers: tuple
     pbc: tuple
@@ -160,50 +181,100 @@ class PreparedGeometry:
     cell: np.ndarray
     orthogonal_basis: np.ndarray | None
     orthogonal_lensq: np.ndarray | None
+    skew_mic: PreparedSkewMIC | None = None
+
+
+def _readonly(arr):
+    arr = np.array(arr, dtype=float, copy=True)
+    arr.setflags(write=False)
+    return arr
+
+
+def _prepare_skew_mic(basis):
+    """Precompute only cell-dependent work; leave exact image choices dynamic.
+
+    Failure to prepare merely preserves the existing unprepared MIC fallback.
+    In particular, degenerate cells are still rejected at MIC evaluation time.
+    """
+    try:
+        q, r = np.linalg.qr(basis, mode='reduced')
+    except (ValueError, np.linalg.LinAlgError, FloatingPointError):
+        return None
+    projection = None
+    sigma = scale = None
+    images = ()
+    try:
+        singular = np.linalg.svd(basis, compute_uv=False)
+        candidate_sigma = float(singular[-1])
+        candidate_scale = float(singular[0])
+        if (np.isfinite(candidate_sigma) and
+                candidate_sigma > 1e-10*max(candidate_scale, 1.0) and
+                candidate_scale/candidate_sigma <= 20.):
+            gram = basis.T @ basis
+            # The certified fast solver still guards extremes, boundaries,
+            # near-degenerate cells, and image ties before accepting a result.
+            # Solve the constant projection ONCE for repeated query batches.
+            projection = np.linalg.solve(gram, basis.T).T
+            if np.isfinite(projection).all():
+                images = tuple(_readonly(_image_shifts(basis.shape[1], k) @ basis.T)
+                               for k in (1, 2, 3))
+                sigma, scale = candidate_sigma, candidate_scale
+            else:
+                projection = None
+    except (ValueError, np.linalg.LinAlgError, FloatingPointError, OverflowError):
+        projection = None
+        images = ()
+    return PreparedSkewMIC(_readonly(basis), _readonly(q), _readonly(r),
+                           None if projection is None else _readonly(projection),
+                           sigma, scale, images)
 
 
 def prepare_geometry(g):
-    """Validate ONCE and snapshot an independent, read-only numeric geometry.
-
-    Preparation must be repeated after modifying a source dictionary. No
-    topology, constraints, or cutoff information enters geometric identity.
-    """
+    """Validate once and snapshot read-only geometry and MIC cell factors."""
     validate_geometry(g)
     cell = np.array(g['cell_angstrom'], dtype=float, copy=True)
     pos = np.array(g['positions_angstrom'], dtype=float, copy=True)
     pbc = tuple(g['pbc'])
-    basis = None
-    lensq = None
+    orth_basis = orth_lensq = skew = None
     if any(pbc):
         candidate = cell[np.asarray(pbc, dtype=bool)].T
         gram = candidate.T @ candidate
         diag = np.diag(gram)
-        offdiag = gram-np.diag(diag)
+        offdiag = gram - np.diag(diag)
         if (np.all(diag > 1e-20) and
                 np.all(np.abs(offdiag) <= 1e-14*np.sqrt(np.outer(diag, diag)))):
-            basis = candidate.copy()
-            lensq = diag.copy()
-            basis.setflags(write=False)
-            lensq.setflags(write=False)
+            orth_basis, orth_lensq = _readonly(candidate), _readonly(diag)
+        else:
+            skew = _prepare_skew_mic(candidate)
     cell.setflags(write=False)
     pos.setflags(write=False)
-    return PreparedGeometry(tuple(g['numbers']), pbc, pos, cell, basis, lensq)
+    return PreparedGeometry(tuple(g['numbers']), pbc, pos, cell,
+                            orth_basis, orth_lensq, skew)
+
+
 
 
 def _mic_prepared(disp, g):
-    """Use a proven orthogonal MIC shortcut; else invoke the original MIC."""
+    """Reuse orthogonal or skew cell factors; retain the exact QR fallback."""
+    arr = np.asarray(disp, dtype=float)
     if not any(g.pbc):
-        return np.asarray(disp, dtype=float).copy()
+        return arr.copy()
     if g.orthogonal_basis is not None:
         basis = g.orthogonal_basis
-        fractional = (disp @ basis) / g.orthogonal_lensq
+        fractional = (arr @ basis) / g.orthogonal_lensq
         nearest = np.rint(fractional)
         if (np.all(np.abs(fractional) < 1e6) and
                 not np.any(np.abs(np.abs(fractional-nearest)-0.5) < 1e-9)):
-            return disp - nearest @ basis.T
-    # Skewed cells, degenerate cells and Voronoi boundaries retain the exact
-    # frozen decoder (including its tie-breaking and failure behavior).
-    return _mic(disp, g.cell, g.pbc)
+            return arr - nearest @ basis.T
+    if g.skew_mic is not None:
+        context = g.skew_mic
+        result = _certified_skew_mic(arr, context.basis, prepared=context)
+        if result is not None:
+            return result
+        # Same QR sphere decoder as unprepared MIC, now with cached Q/R.
+        return _qr_sphere_mic(arr, context.basis, context.q, context.r)
+    # Orthogonal ties and skew prep failures invoke the frozen original MIC.
+    return _mic(arr, g.cell, g.pbc)
 
 
 def core_drift_maxdev_prepared(a, b):
