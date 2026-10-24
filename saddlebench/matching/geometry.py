@@ -145,6 +145,88 @@ def core_drift_maxdev(a,b):
     corrected=_mic(mic-np.mean(core,axis=0),ca,a['pbc'])
     return float(np.max(np.linalg.norm(corrected,axis=1)))
 
+
+# Opt-in prevalidated representation for repeated comparisons. No global caches:
+# caller owns lifecycle and mutations of the source JSON cannot silently alter
+# the prepared data. Public core_drift_maxdev retains its full validation path.
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True, eq=False)
+class PreparedGeometry:
+    numbers: tuple
+    pbc: tuple
+    positions: np.ndarray
+    cell: np.ndarray
+    orthogonal_basis: np.ndarray | None
+    orthogonal_lensq: np.ndarray | None
+
+
+def prepare_geometry(g):
+    """Validate ONCE and snapshot an independent, read-only numeric geometry.
+
+    Preparation must be repeated after modifying a source dictionary. No
+    topology, constraints, or cutoff information enters geometric identity.
+    """
+    validate_geometry(g)
+    cell = np.array(g['cell_angstrom'], dtype=float, copy=True)
+    pos = np.array(g['positions_angstrom'], dtype=float, copy=True)
+    pbc = tuple(g['pbc'])
+    basis = None
+    lensq = None
+    if any(pbc):
+        candidate = cell[np.asarray(pbc, dtype=bool)].T
+        gram = candidate.T @ candidate
+        diag = np.diag(gram)
+        offdiag = gram-np.diag(diag)
+        if (np.all(diag > 1e-20) and
+                np.all(np.abs(offdiag) <= 1e-14*np.sqrt(np.outer(diag, diag)))):
+            basis = candidate.copy()
+            lensq = diag.copy()
+            basis.setflags(write=False)
+            lensq.setflags(write=False)
+    cell.setflags(write=False)
+    pos.setflags(write=False)
+    return PreparedGeometry(tuple(g['numbers']), pbc, pos, cell, basis, lensq)
+
+
+def _mic_prepared(disp, g):
+    """Use a proven orthogonal MIC shortcut; else invoke the original MIC."""
+    if not any(g.pbc):
+        return np.asarray(disp, dtype=float).copy()
+    if g.orthogonal_basis is not None:
+        basis = g.orthogonal_basis
+        fractional = (disp @ basis) / g.orthogonal_lensq
+        nearest = np.rint(fractional)
+        if (np.all(np.abs(fractional) < 1e6) and
+                not np.any(np.abs(np.abs(fractional-nearest)-0.5) < 1e-9)):
+            return disp - nearest @ basis.T
+    # Skewed cells, degenerate cells and Voronoi boundaries retain the exact
+    # frozen decoder (including its tie-breaking and failure behavior).
+    return _mic(disp, g.cell, g.pbc)
+
+
+def core_drift_maxdev_prepared(a, b):
+    """Canonical maxdev for explicit prepared inputs; same scientific kernel.
+
+    The first geometry's cell is used for MIC, exactly as in
+    core_drift_maxdev. Every call still checks atom ordering/PBC/cell.
+    """
+    if not isinstance(a, PreparedGeometry) or not isinstance(b, PreparedGeometry):
+        raise TypeError('PREPARED_GEOMETRY_REQUIRED')
+    if a.numbers != b.numbers:
+        raise ValueError('INCOMPATIBLE_ATOM_ORDER')
+    if a.pbc != b.pbc:
+        raise ValueError('INCOMPATIBLE_PBC')
+    if np.max(np.abs(a.cell-b.cell)) > 0.05:
+        raise ValueError('INCOMPATIBLE_CELL')
+    disp = b.positions-a.positions
+    mic = _mic_prepared(disp, a)
+    magnitudes = np.linalg.norm(mic, axis=1)
+    core = mic[magnitudes <= np.median(magnitudes)]
+    corrected = _mic_prepared(mic-np.mean(core, axis=0), a)
+    return float(np.max(np.linalg.norm(corrected, axis=1)))
+
 def complete_link_diameter(geometries):
     """Conservative all-pairs diameter; never infer equivalence from transitive links."""
     return max((core_drift_maxdev(a,b) for i,a in enumerate(geometries) for b in geometries[i+1:]),default=0.0)

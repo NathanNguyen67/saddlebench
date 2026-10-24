@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import math
 import re
-from saddlebench.matching.matcher import match
+from saddlebench.matching.matcher import match, PreparedReferenceMatcher
 
 SHA = re.compile(r'^[0-9a-f]{64}$')
 ORDER=('CERTIFIED_FO','CERTIFIED_NON_FO','UNKNOWN')
@@ -118,6 +118,9 @@ def score(submissions,snapshot,elapsed_seconds):
     if not _finite(elapsed_seconds) or elapsed_seconds<=0:
         raise ValueError('ELAPSED_SECONDS_MUST_BE_POSITIVE_FINITE')
     ids=set();results=[];credited=set();scopes=set();by_refid={r['reference_id']:r for r in snapshot.records}
+    # One immutable reference snapshot per score invocation. Reuse validated
+    # arrays across submissions; no process-global geometry cache or identity rule changes.
+    matcher = PreparedReferenceMatcher(snapshot)
     # Each match event is independently classified, then dedup is applied per exact scope.
     for i,s in enumerate(submissions):
         subid=s.get('submission_id',f'submission-{i+1}')
@@ -128,7 +131,7 @@ def score(submissions,snapshot,elapsed_seconds):
             if s.get(k) is not None and (not isinstance(s[k],str) or not s[k]):raise ValueError('INVALID_SUBMISSION_SCOPE')
         start=s.get('starting_minimum_id');pes=s.get('pes_id');parent=s.get('parent_structure_id')
         scopes.add((start,pes,parent))
-        geom=match(s,snapshot)
+        geom=matcher.match(s)
         states=_empty_states();matched_identity=None;matched_ref=None
         if geom['state']=='UNIQUE_REFERENCE_MATCH':
             matched_identity=geom['matches'][0]['identity_id']
