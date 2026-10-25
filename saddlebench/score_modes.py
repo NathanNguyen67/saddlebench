@@ -39,32 +39,38 @@ def _file_digest(path):
     return h.hexdigest()
 
 
-REGISTRY_SHA='85d37e55448b544473b34e7bb244823e80ddc85091bbe6ae3e771c7beb4b0a41'
-
-
 def verify_reference(root, cases_path):
-    """Unchanged published-reference verification contract from original CLI."""
+    """Verify a self-described reference snapshot, without knowing its dataset.
+
+    The adapter verifies published checksums, linkage and stated row counts.
+    It deliberately does not claim scientific qualification or apply cutoffs.
+    """
     root=Path(root)
     private_meta=json.loads((root/'private_manifest.json').read_text())
     refmeta=json.loads((root/'reference/manifest.json').read_text())
     hashes=json.loads((root/'CHECKSUMS.json').read_text())
-    if private_meta.get('source_registry_sha256')!=REGISTRY_SHA or refmeta.get('registry_sha256')!=REGISTRY_SHA:
+    registry=private_meta.get('source_registry_sha256')
+    if not isinstance(registry,str) or len(registry)!=64 or refmeta.get('registry_sha256')!=registry:
         raise RuntimeError('REFERENCE_REGISTRY_SHA_MISMATCH')
-    if private_meta.get('mode')!='all_saddles' or refmeta.get('mode')!='all_saddles':
-        raise RuntimeError('REFERENCE_MODE_MISMATCH')
-    if private_meta.get('case_count')!=123 or refmeta.get('reference_count')!=2387:
-        raise RuntimeError('REFERENCE_COUNTS_MISMATCH')
+    if not isinstance(hashes,dict) or not hashes:
+        raise RuntimeError('REFERENCE_CHECKSUMS_MISSING')
     for relative,expected in hashes.items():
         if (not isinstance(relative,str) or not relative or Path(relative).is_absolute()
                 or '..' in Path(relative).parts or not isinstance(expected,str)
                 or len(expected)!=64 or not (root/relative).is_file()
                 or _file_digest(root/relative)!=expected):
             raise RuntimeError('REFERENCE_CHECKSUM_FAILED:'+str(relative))
-    if _file_digest(root/'reference/reference.jsonl')!=refmeta['reference_sha256']:
+    if _file_digest(root/'reference/reference.jsonl')!=refmeta.get('reference_sha256'):
         raise RuntimeError('REACTION_REFERENCE_HASH_MISMATCH')
+    with (root/'reference/reference.jsonl').open('rt',encoding='utf8') as src:
+        counted=sum(1 for line in src if line.strip())
+    if counted!=refmeta.get('reference_count'):
+        raise RuntimeError('REFERENCE_ROW_COUNT_MISMATCH')
     with Path(cases_path).open(newline='',encoding='utf8') as f:
         rows=list(csv.DictReader(f))
-    if len(rows)!=123 or any(x['registry_sha256']!=REGISTRY_SHA for x in rows):
+    if not rows or (len({x.get('case_id') for x in rows})!=len(rows)):
+        raise RuntimeError('PUBLIC_INPUTS_INVALID')
+    if private_meta.get('case_count')!=len(rows) or any(x.get('registry_sha256')!=registry for x in rows):
         raise RuntimeError('PUBLIC_INPUTS_SNAPSHOT_MISMATCH')
     return True
 
@@ -90,7 +96,8 @@ def _case_worker(task):
     observation = run_case(public, private, case, trajectory, seconds,
         task.get('nonfo_cache'), mode=('greedy_full' if mode == 'score_detailed' else mode),
         batch_size=task['microbatch_size'],
-        cache_root=Path(task['index_cache']))
+        cache_root=Path(task['index_cache']),
+        require_starting_minimum=task.get('require_starting_minimum',False))
     k = observation['known_eligible_reactions_K']
     u = observation['greedy_unique_reactions_U']
     bad = observation['greedy_potential_bad_first_hit_groups'] if mode != 'coverage' else 0
@@ -100,7 +107,8 @@ def _case_worker(task):
         'mode': mode,
         'case_id': case['case_id'],
         'structure_id': case['structure_id'],
-        'starting_minimum_id': case['starting_minimum_id'],
+        'starting_minimum_id': case.get('starting_minimum_id'),
+        'starting_minimum_filter':bool(task.get('require_starting_minimum',False)),
         'known_eligible_reactions_K': k,
         'greedy_unique_reactions_U': u,
         'coverage': u/k if k else None,
@@ -136,7 +144,7 @@ def _load_cases(casefile):
 
 def _collect_tasks(*, casefile, public_root, private, case_id, submission,
                    elapsed_seconds, submission_csv, mode, microbatch_size,
-                   nonfo_cache, index_cache):
+                   nonfo_cache, index_cache, require_starting_minimum=False):
     cases = _load_cases(casefile)
     if case_id is not None:
         if case_id not in cases:
@@ -181,6 +189,7 @@ def _collect_tasks(*, casefile, public_root, private, case_id, submission,
         task = {'case': cases[cid], 'public': str(public_root), 'private': str(private),
             'trajectory': str(traj), 'elapsed_seconds': seconds, 'mode': mode,
             'microbatch_size': microbatch_size,
+            'require_starting_minimum':require_starting_minimum,
             'nonfo_cache': str(nonfo_cache) if nonfo_cache is not None else None,
             'index_cache': str(index_cache)}
         if model is not None:
@@ -203,7 +212,10 @@ def _batch_report(reports, mode, total_available):
         'first_hit_nonfo_groups_with_known_start': b if mode == 'score' else None,
         'first_hit_potential_bad_groups_with_known_start': b if mode != 'coverage' else None,
         'canonical_known_bad_unique_B': None}
+    if len({bool(x.get('starting_minimum_filter',False)) for x in reports})>1:
+        raise ValueError('MIXED_STARTING_MINIMUM_SCORING_POLICIES')
     return {'schema_version':'saddlebench-quick-batch-v1', 'mode':mode,
+        'scoring_scope_policy':('structure-pes-start' if reports and reports[0].get('starting_minimum_filter') else 'structure-pes'),
         'selected_cases':len(reports),'available_cases':total_available,
         'aggregate':aggregate,'case_results':reports,
         'warning': {'score': SCORE_WARNING, 'score_detailed': DETAILED_WARNING,
@@ -221,6 +233,7 @@ def _model_report(reports, mode, total_available):
                      'case_ids': sorted(item['case_id'] for item in items),
                      'aggregate': _batch_report(items, mode, total_available)['aggregate']})
     return {'schema_version': 'saddlebench-quick-model-comparison-v1',
+            'scoring_scope_policy':('structure-pes-start' if reports and reports[0].get('starting_minimum_filter') else 'structure-pes'),
             'mode': mode, 'selected_cases': len({r['case_id'] for r in reports}),
             'selected_submissions': len(reports), 'available_cases': total_available,
             'model_aggregates': arms, 'case_results': reports,
@@ -251,7 +264,7 @@ def _detailed_batch_report(reports, total_available):
 
 def run(*, casefile, private, case_id=None, submission=None, elapsed_seconds=None,
         submission_csv=None, mode='score', processes=1, microbatch_size=16,
-        index_cache=None, nonfo_cache=None):
+        index_cache=None, nonfo_cache=None,require_starting_minimum=False):
     if mode not in MODES:
         raise ValueError('UNKNOWN_SCORE_MODE')
     if type(processes) is not int or processes < 1:
@@ -269,7 +282,8 @@ def run(*, casefile, private, case_id=None, submission=None, elapsed_seconds=Non
     tasks,total=_collect_tasks(casefile=casefile,public_root=casefile.parent,
         private=private,case_id=case_id,submission=submission,
         elapsed_seconds=elapsed_seconds,submission_csv=submission_csv,mode=mode,
-        microbatch_size=microbatch_size,nonfo_cache=nonfo_cache,index_cache=index_cache)
+        microbatch_size=microbatch_size,nonfo_cache=nonfo_cache,index_cache=index_cache,
+        require_starting_minimum=require_starting_minimum)
     if mode in ('score','score_detailed') and nonfo_cache is None:
         raise ValueError('SCORE_REQUIRES_VERIFIED_NONFO_CACHE')
     # Serial remains the default. Parallelism is strictly across submitted
@@ -306,6 +320,8 @@ def main(argv=None):
     p.add_argument('--reference-root',help='Offline verified HF reference snapshot directory')
     p.add_argument('--cases-csv',help='Offline published cases.csv (requires --reference-root)')
     p.add_argument('--no-progress',action='store_true',help='Silence reference download messages')
+    p.add_argument('--require-starting-minimum',action='store_true',
+        help='Opt into historical starting-minimum filtering (default: off)')
     args=p.parse_args(argv)
     if (args.reference_root is None)!=(args.cases_csv is None):
         p.error('--reference-root and --cases-csv must be provided together')
@@ -333,14 +349,10 @@ def main(argv=None):
             if d.is_symlink():raise ValueError('SYMLINK_IN_REFERENCE_CACHE_PATH')
         cache.mkdir(parents=True,exist_ok=True,mode=0o700)
         cache.chmod(0o700)
-        from huggingface_hub import snapshot_download,hf_hub_download
-        if not args.no_progress:print('REFERENCE_DOWNLOAD=START',flush=True)
+        from saddlebench.reference.hf_compat import download_default_reference,resolve_cases
         try:
-            private=Path(snapshot_download(repo_id='traingletrain/saddlebench-reference-private',
-                repo_type='dataset',cache_dir=str(cache),token=False,
-                allow_patterns=['private_manifest.json','reference/*','diagnostic_saddles.jsonl.gz','CHECKSUMS.json']))
-            casefile=Path(hf_hub_download(repo_id='traingletrain/saddlebench-prototype',
-                repo_type='dataset',filename='cases.csv',cache_dir=str(cache),token=False))
+            private,casefile=download_default_reference(cache,args.no_progress)
+            casefile=resolve_cases(private,casefile,cache,verify_reference)
         except Exception as exc:
             raise SystemExit('PUBLIC_HF_REFERENCE_UNAVAILABLE: '+type(exc).__name__) from exc
     verify_reference(private,casefile)
@@ -354,7 +366,8 @@ def main(argv=None):
         submission=args.submission,elapsed_seconds=args.elapsed_seconds,
         submission_csv=args.submission_csv,mode=args.mode,
         processes=args.processes,microbatch_size=args.microbatch_size,
-        index_cache=Path(args.index_cache_dir)/'group_indices',nonfo_cache=nonfo)
+        index_cache=Path(args.index_cache_dir)/'group_indices',nonfo_cache=nonfo,
+        require_starting_minimum=args.require_starting_minimum)
     # No silent file replacement. Publish result atomically only after scoring.
     if out.exists():
         raise SystemExit('OUTPUT_ALREADY_EXISTS: '+str(out))
@@ -369,6 +382,7 @@ def main(argv=None):
         if os.path.exists(name):os.unlink(name)
     print('SCORE_VERIFY=PASS')
     print('MODE='+args.mode)
+    print('STARTING_MINIMUM_FILTER='+('ON' if args.require_starting_minimum else 'OFF'))
     print('PROCESSES='+str(min(args.processes,1 if args.case_id else len(result['case_results']))))
     print('OUTPUT='+str(out))
     from saddlebench.terminal_summary import render_summary

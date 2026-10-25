@@ -4,6 +4,8 @@ SaddleBench compares predicted saddle-point structures with a public collection 
 
 You can score results on your own computer. SaddleBench does not run the searches for you, and your predicted structures are not uploaded.
 
+**Research archive:** The separate resumable reaction SQLite exporter is now included in `tools.reaction_archive`. It does not change the public scoring reference. See [Reaction archive](docs/REACTION_ARCHIVE.md). The opt-in prepared maxdev performance path is described in [Maxdev preparation](docs/MAXDEV_PREPARATION.md).
+
 ## Datasets
 
 | Dataset | What it contains | Link |
@@ -317,3 +319,34 @@ in the diagnostic JSON. The new diagnostic JSON schema is
 Existing `score`, `score_detailed`, and `coverage` scientific definitions and
 thresholds are unchanged. This is a new experimental evaluation metric, not
 independent proof of stationary-point validity or DoubleMin connectedness.
+
+### SaddleBench dev: prepared matching and reaction SQLite diagnostics (2026-10-24)
+
+The prepared maxdev kernel was tested against 8,128 real Pt-343 pairs on LS6
+and accelerated default `score()` comparisons by reusing validated reference
+arrays per scoring operation. See `docs/MAXDEV_PREPARATION.md` for timings and
+parity. The standalone SQLite exporter remains under `tools/reaction_archive/`.
+Its completion on LS6 is not confirmed by the maxdev benchmark. To inspect
+only the recorded archive metadata on a vm-small allocation without a full
+integrity scan, run `bash scripts/peek_reaction_archive_on_idev.sh`. The output
+marker does not constitute a new integrity check. See `docs/REACTION_ARCHIVE.md`.
+
+## Cutoff-neutral reaction catalog (v0.3.0rc1 candidate)
+
+In addition to the historical preselected scoring reference, `saddlebench score`
+now accepts an independently generated, checksum-verified
+`--catalog-root /path/to/catalog` or the generic HF transport adapter
+`--catalog-repo OWNER/DATASET --catalog-prefix catalogs/ID`.
+The catalog supplies reaction membership and scientific-evidence status; the
+scorer performs exact maxdev matching and dynamically calculates K under
+an optional **barrier <1.0 eV** default policy. Use `--barrier-max-eV X`
+or `--no-barrier-cutoff`. Starting-minimum matching is OFF unless explicitly
+requested with `--require-starting-minimum`.
+
+Catalogs derived from the 2026-10-24 lean SaddleMill export have **no independently
+verified force-convergence status**. These rows are excluded from strict score
+credit; `--allow-registry-reported-evidence` enables clearly labeled
+**exploratory** registry-based coverage, not an official scientific certification.
+See `docs/SCORING_CATALOG_V2_20261024.md` for provenance, exact commands, and
+limitations. The previously published historical scoring reference remains
+accessible and unchanged.

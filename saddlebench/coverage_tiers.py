@@ -128,25 +128,37 @@ def _case_worker(task):
     )
     private = Path(task['private'])
     case = task['case']
-    _, reactions = rm.load_reference(private / 'reference')
-    meta = json.loads((private / 'private_manifest.json').read_text())
-    if meta['source_registry_sha256'] != case['registry_sha256']:
-        raise ValueError('GREEDY_REGISTRY_IDENTITY_MISMATCH')
+    catalog_root=task.get('catalog_root')
+    policy=None
+    if catalog_root:
+        from saddlebench.reference.catalog_v2 import load_catalog
+        reactions,policy=load_catalog(catalog_root,task['catalog_cases_csv'],
+            barrier_max_eV=task.get('barrier_max_eV',1.0),
+            allow_registry_reported=task.get('allow_registry_reported',False),case_id=case['case_id'])
+    else:
+        _, reactions = rm.load_reference(private / 'reference')
+        meta = json.loads((private / 'private_manifest.json').read_text())
+        if meta['source_registry_sha256'] != case['registry_sha256']:
+            raise ValueError('GREEDY_REGISTRY_IDENTITY_MISMATCH')
+    from saddlebench.scoring.scope import scoped_ids
+    require_start=task.get('require_starting_minimum',False)
     predictions = rm.read_submissions(task['trajectory'],
-                                      start=case['starting_minimum_id'],
+                                      start=case.get('starting_minimum_id') if require_start else None,
                                       parent=case['structure_id'],
-                                      pes=case['pes_id'])
-    grouped = _group_eligible(reactions, case)
+                                      pes=case['pes_id'],require_starting_minimum=require_start)
+    grouped = _group_eligible(reactions, case, require_start)
     eligible = _build_stages(grouped, Path(task['index_cache']), 'eligible',
-                             _load_pinned_eligible_indices(case, grouped))
-    k = int(case['known_reaction_count'])
+                             _load_pinned_eligible_indices(case, grouped, require_start))
+    k = len(scoped_ids(reactions,case,require_starting_minimum=require_start))
     n, tiers, match_seconds = _tally_predictions(
         predictions, eligible, k, task['microbatch_size'])
     return {
         'model': task.get('model', 'default'),
         'case_id': case['case_id'],
         'structure_id': case['structure_id'],
-        'starting_minimum_id': case['starting_minimum_id'],
+        'starting_minimum_id': case.get('starting_minimum_id'),
+        'starting_minimum_filter':require_start,
+        'catalog_policy':policy,
         'prediction_count': n,
         'self_reported_elapsed_seconds': task['elapsed_seconds'],
         'matching_only_seconds': match_seconds,
@@ -195,7 +207,18 @@ def _create_report(results, available):
         for name, cases in sorted(by_model.items())
     ]
     sets = [frozenset(m['case_ids']) for m in models]
+    if len({bool(x.get('starting_minimum_filter',False)) for x in results})>1:
+        raise ValueError('MIXED_STARTING_MINIMUM_SCORING_POLICIES')
+    policies=[r.get('catalog_policy') for r in results]
+    if len({json.dumps(p,sort_keys=True) for p in policies})>1:
+        # Per-case selection counts may differ. Compare only fixed policy fields.
+        compare=[{k:v for k,v in (p or {}).items() if k!='selection_counts'} for p in policies]
+        if len({json.dumps(p,sort_keys=True) for p in compare})>1:
+            raise ValueError('MIXED_CATALOG_SCORING_POLICIES')
     return {'schema_version': SCHEMA, 'mode': 'coverage_tiers',
+            'catalog_scoring_policy':({k:v for k,v in policies[0].items() if k!='selection_counts'} if policies and policies[0] else None),
+            'scoring_scope_policy':('structure-pes-start' if results and results[0].get('starting_minimum_filter')
+                                    else 'structure-pes'),
             'thresholds_maxdev_A': list(THRESHOLDS),
             'available_cases': available,
             'selected_cases': len({x['case_id'] for x in results}),
@@ -276,9 +299,20 @@ def main(argv=None):
     parser.add_argument('--microbatch-size', type=int, default=16)
     parser.add_argument('--cache-dir', default=str(Path.home() / '.cache/saddlebench_reference'))
     parser.add_argument('--index-cache-dir', default=str(Path.home() / '.cache/saddlebench_first_hit_index'))
-    parser.add_argument('--reference-root', help='Offline verified HF private reference snapshot directory')
+    parser.add_argument('--reference-root', help='Offline verified historical HF snapshot (legacy mode)')
+    parser.add_argument('--catalog-root', help='Cutoff-neutral, checksum-verified reaction catalog v2')
+    parser.add_argument('--catalog-cases-csv',help='Optional cases CSV; defaults to CATALOG_ROOT/cases.csv')
+    parser.add_argument('--catalog-repo',help='Optional Hugging Face repo ID for a remote cutoff-neutral catalog')
+    parser.add_argument('--catalog-prefix',help='Immutable catalog folder on that HF repo, e.g. catalogs/<manifest-sha16>')
+    parser.add_argument('--barrier-max-eV',type=float,default=1.0,
+                        help='Strict exclusive barrier cutoff for catalog v2; default 1.0 eV')
+    parser.add_argument('--no-barrier-cutoff',action='store_true',help='Disable catalog v2 barrier filtering')
+    parser.add_argument('--allow-registry-reported-evidence',action='store_true',
+                        help='EXPLORATORY: score connected registry reports even when force evidence was not independently verified')
     parser.add_argument('--cases-csv', help='Offline HF public cases.csv (with --reference-root)')
     parser.add_argument('--no-progress', action='store_true')
+    parser.add_argument('--require-starting-minimum', action='store_true',
+                        help='Opt into historical starting-minimum filtering (default: off)')
     parser.add_argument('--no-html', action='store_true', help='Do not write standalone HTML')
     parser.add_argument('--no-image', action='store_true', help='Do not write dataset SVG/PNG')
     parser.add_argument('--open-image', action='store_true', help='Request an X11 image viewer when available')
@@ -291,7 +325,15 @@ def main(argv=None):
         parser.error('--submission-csv cannot use --submission or --elapsed-seconds')
     if args.color and args.no_color:
         parser.error('--color and --no-color are mutually exclusive')
-    if (args.reference_root is None) != (args.cases_csv is None):
+    if bool(args.catalog_repo)!=bool(args.catalog_prefix):
+        parser.error('--catalog-repo and --catalog-prefix must be used together')
+    if args.catalog_repo and (args.catalog_root or args.reference_root or args.cases_csv):
+        parser.error('Remote catalog cannot be combined with --catalog-root or historical snapshot')
+    if args.catalog_root and (args.reference_root or args.cases_csv):
+        parser.error('--catalog-root cannot be combined with the historical reference flags')
+    if not (args.catalog_root or args.catalog_repo) and (args.no_barrier_cutoff or args.allow_registry_reported_evidence or args.catalog_cases_csv or '--barrier-max-eV' in (argv or [])):
+        parser.error('Catalog scoring options require --catalog-root')
+    if (not args.catalog_root and not args.catalog_repo) and ((args.reference_root is None) != (args.cases_csv is None)):
         parser.error('--reference-root and --cases-csv must be provided together')
     if args.processes < 1 or not 1 <= args.microbatch_size <= 256:
         parser.error('processes must be >=1 and microbatch-size must be 1..256')
@@ -303,7 +345,28 @@ def main(argv=None):
     output = Path(args.output).expanduser().absolute()
     if output.exists():
         raise SystemExit('OUTPUT_ALREADY_EXISTS: ' + str(output))
-    if args.reference_root:
+    if args.catalog_repo:
+        from saddlebench.reference.catalog_v2 import download_catalog_subset
+        if args.case_id:
+            requested=[args.case_id]
+        else:
+            import csv as _csv
+            with Path(args.submission_csv).open(encoding='utf8',newline='') as _f:
+                requested=[r['case_id'] for r in _csv.DictReader(_f)]
+        private=download_catalog_subset(args.catalog_repo,args.catalog_prefix,
+            Path(args.cache_dir)/'catalog_v2',requested)
+        casefile=private/'cases.csv'
+    elif args.catalog_root:
+        private=Path(args.catalog_root).expanduser().absolute()
+        casefile=Path(args.catalog_cases_csv).expanduser().absolute() if args.catalog_cases_csv else private/'cases.csv'
+        from saddlebench.reference.catalog_v2 import load_catalog
+        # Validate policy and source checksums for a local case before any output.
+        from saddlebench.score_modes import _load_cases
+        all_cases=_load_cases(casefile)
+        audit_case=(args.case_id if args.case_id else next(iter(all_cases)))
+        load_catalog(private,casefile,barrier_max_eV=None if args.no_barrier_cutoff else args.barrier_max_eV,
+                     allow_registry_reported=args.allow_registry_reported_evidence,case_id=audit_case)
+    elif args.reference_root:
         private = Path(args.reference_root).expanduser().absolute()
         casefile = Path(args.cases_csv).expanduser().absolute()
     else:
@@ -313,21 +376,14 @@ def main(argv=None):
                 raise ValueError('SYMLINK_IN_REFERENCE_CACHE_PATH')
         cache.mkdir(parents=True, exist_ok=True, mode=0o700)
         cache.chmod(0o700)
-        from huggingface_hub import hf_hub_download, snapshot_download
-        if not args.no_progress:
-            print('REFERENCE_DOWNLOAD=START', flush=True)
+        from saddlebench.reference.hf_compat import download_default_reference
         try:
-            private = Path(snapshot_download(
-                repo_id='traingletrain/saddlebench-reference-private',
-                repo_type='dataset', cache_dir=str(cache), token=False,
-                allow_patterns=['private_manifest.json', 'reference/*',
-                                'diagnostic_saddles.jsonl.gz', 'CHECKSUMS.json']))
-            casefile = Path(hf_hub_download(
-                repo_id='traingletrain/saddlebench-prototype', repo_type='dataset',
-                filename='cases.csv', cache_dir=str(cache), token=False))
+            private,casefile=download_default_reference(cache,args.no_progress)
         except Exception as exc:
-            raise SystemExit('PUBLIC_HF_REFERENCE_UNAVAILABLE: ' + type(exc).__name__) from exc
-    if args.reference_root:
+            raise SystemExit('PUBLIC_HF_REFERENCE_UNAVAILABLE: '+type(exc).__name__) from exc
+    if args.catalog_root or args.catalog_repo:
+        pass
+    elif args.reference_root:
         verify_reference(private, casefile)
     else:
         from saddlebench.reference.hf_compat import resolve_cases
@@ -339,6 +395,12 @@ def main(argv=None):
         submission_csv=submission_csv, mode='coverage',
         microbatch_size=args.microbatch_size, nonfo_cache=None,
         index_cache=Path(args.index_cache_dir) / 'group_indices')
+    for task in tasks:
+        task['require_starting_minimum']=args.require_starting_minimum
+        if args.catalog_root or args.catalog_repo:
+            task.update(catalog_root=str(private),catalog_cases_csv=str(casefile),
+                        barrier_max_eV=None if args.no_barrier_cutoff else args.barrier_max_eV,
+                        allow_registry_reported=args.allow_registry_reported_evidence)
     if args.processes > 1 and len(tasks) > 1:
         with ProcessPoolExecutor(max_workers=min(args.processes, len(tasks))) as pool:
             results = list(pool.map(_case_worker, tasks))
@@ -358,6 +420,9 @@ def main(argv=None):
         if os.path.exists(temp):
             os.unlink(temp)
     print('REFERENCE_VERIFY=PASS')
+    if args.catalog_root or args.catalog_repo:
+        print('CATALOG_DEFAULT_BARRIER_POLICY='+('NONE' if args.no_barrier_cutoff else str(args.barrier_max_eV)))
+        print('CATALOG_EVIDENCE_POLICY='+('REGISTRY_REPORTED_EXPLORATORY' if args.allow_registry_reported_evidence else 'VERIFIED_ONLY'))
     print('COVERAGE_TIERS=PASS')
     print('OUTPUT=' + str(output))
     # One terminal view. The renderer consumes the native JSON report unchanged.

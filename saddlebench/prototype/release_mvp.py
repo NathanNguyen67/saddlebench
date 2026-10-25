@@ -316,8 +316,19 @@ def _prepare_diag_lookups(root,cases,progress=None):
     if progress:progress('diagnostic_index',i if 'i' in locals() else 0,total or (i if 'i' in locals() else 0))
     return lookups
 
-def _prepare_diag_lookup(root,case,progress=None):
-    return _prepare_diag_lookups(root,[case],progress)[case['case_id']]
+def _prepare_diag_lookup(root,case,progress=None,require_starting_minimum=True):
+    if require_starting_minimum:
+        return _prepare_diag_lookups(root,[case],progress)[case['case_id']]
+    # Dataset-neutral structure-level diagnostics: diagnostic categories must
+    # not disappear simply because search-start provenance is absent.
+    lookup=defaultdict(list)
+    with gzip.open(Path(root)/'diagnostic_saddles.jsonl.gz','rt',encoding='utf8') as stream:
+        for line in stream:
+            item=json.loads(line)
+            if item.get('structure_id')!=case['structure_id']:continue
+            item['start_known']=bool(item.get('starting_minimum_ids'))
+            lookup[tuple(item['geometry']['numbers'])].append(item)
+    return lookup
 
 
 def diagnose(matched, prediction, lookup, anchor_batches=None):

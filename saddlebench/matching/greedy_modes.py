@@ -85,11 +85,12 @@ class Stage:
         return None,hit
 
 
-def _group_eligible(reactions,case):
-    """Exact W2 structure/start/PES/numbers scoping, with original ref order."""
+def _group_eligible(reactions,case,require_starting_minimum=False):
+    """Structure/PES/numbers scope; optional historical search-start restriction."""
+    from saddlebench.scoring.scope import matches
     by_scope=defaultdict(list)
     for r in reactions:
-        if r['structure_id']!=case['structure_id'] or r['starting_minimum_id']!=case['starting_minimum_id'] or r['pes_id']!=case['pes_id']:
+        if not matches(r,case,require_starting_minimum=require_starting_minimum):
             continue
         for member in r['members']:
             rec=dict(member)
@@ -111,9 +112,12 @@ def _build_stages(groups,cache_root,tag,overrides=None):
                       pinned_index=overrides.get(key)) for key,members in groups.items()}
 
 
-def _load_pinned_eligible_indices(case,groups):
+def _load_pinned_eligible_indices(case,groups,require_starting_minimum=False):
     """Reuse previous certified first-center radii across the exact frozen scope."""
     from saddlebench.matching.ab_store import scope_id,geometry_digest
+    # Historical indices were keyed by (structure,start,PES,numbers). They
+    # cannot be reused after removing start-scoping, even with the same case ID.
+    if not require_starting_minimum:return {}
     filename=os.environ.get('SADDLEBENCH_GROUP_INDEX_FILE')
     if not filename:return {}
     path=Path(filename)
@@ -132,7 +136,7 @@ def _load_pinned_eligible_indices(case,groups):
     return override
 
 
-def run_case(public,private,case,trajectory,seconds,nonfo_file,*,mode,batch_size,cache_root,diagnostic_order='nonfo-first'):
+def run_case(public,private,case,trajectory,seconds,nonfo_file,*,mode,batch_size,cache_root,diagnostic_order='nonfo-first',require_starting_minimum=False):
     """Return reduced greedy observations and evidence counters.
 
     Order: eligible -> known nonFO -> (full only) remainder diagnostics.
@@ -148,16 +152,22 @@ def run_case(public,private,case,trajectory,seconds,nonfo_file,*,mode,batch_size
     manifest,reactions=rm.load_reference(ref)
     if json.loads((Path(private)/'private_manifest.json').read_text())['source_registry_sha256']!=case['registry_sha256']:
         raise ValueError('GREEDY_REGISTRY_IDENTITY_MISMATCH')
-    preds=rm.read_submissions(trajectory,start=case['starting_minimum_id'],parent=case['structure_id'],pes=case['pes_id'])
-    eligible_groups=_group_eligible(reactions,case)
+    from saddlebench.scoring.scope import scoped_ids
+    preds=rm.read_submissions(trajectory,
+        start=case.get('starting_minimum_id') if require_starting_minimum else None,
+        parent=case['structure_id'],pes=case['pes_id'],
+        require_starting_minimum=require_starting_minimum)
+    eligible_groups=_group_eligible(reactions,case,require_starting_minimum)
     eligible=_build_stages(eligible_groups,cache_root,'eligible',
-                           _load_pinned_eligible_indices(case,eligible_groups))
-    nonfo_records=load_nonfo_for_case(nonfo_file,case) if mode!='coverage' else []
+                           _load_pinned_eligible_indices(case,eligible_groups,require_starting_minimum))
+    nonfo_records=load_nonfo_for_case(nonfo_file,case,require_starting_minimum) if mode!='coverage' else []
     nonfo=_build_stages(_group_diag(nonfo_records),cache_root,'known_nonfo')
     remaining={}
     all_diag={}
     if mode=='greedy_full':
-        lookups=rel._prepare_diag_lookup(private,case)
+        # A case-specific historical lookup filters by start. The new general
+        # default uses only the structure/PES catalog, never an observed-start label.
+        lookups=rel._prepare_diag_lookup(private,case,None,require_starting_minimum)
         if diagnostic_order=='catalog-first':
             all_diag=_build_stages({tuple(k):[(None,v) for v in values] for k,values in lookups.items()},cache_root,'all_diagnostics')
         else:
@@ -210,7 +220,9 @@ def run_case(public,private,case,trajectory,seconds,nonfo_file,*,mode,batch_size
     for groups in stages.values():
         for stage in groups.values():
             for name,value in stage.stats.items():total[name]+=value
-    k=int(case['known_reaction_count']);u=len(credited)
+    # The denominator belongs to the supplied scored catalog, not a frozen
+    # cases.csv count produced by a different registry or energy policy.
+    k=len(scoped_ids(reactions,case,require_starting_minimum=require_starting_minimum));u=len(credited)
     if u>k:raise ValueError('GREEDY_CREDIT_EXCEEDS_CASE_K')
     bad_preview=len(seen_bad)
     t=float(seconds)

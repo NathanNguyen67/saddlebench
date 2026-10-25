@@ -3,7 +3,7 @@ import csv, tempfile, unittest
 from pathlib import Path
 from unittest.mock import patch
 from saddlebench.reference.hf_compat import _compatible_cases, resolve_cases
-from saddlebench.score_modes import REGISTRY_SHA
+REGISTRY_SHA='85d37e55448b544473b34e7bb244823e80ddc85091bbe6ae3e771c7beb4b0a41'
 
 class ReferencePairTests(unittest.TestCase):
     def test_identity_selection(self):

@@ -16,8 +16,7 @@ FAST_SCHEMA='saddlebench-experimental-fast-nonfo-v1'
 # snapshot-file symlinks to a content-addressed blobs/ store.  The v1 test-only
 # fixture was a regular file, so blanket symlink rejection incorrectly blocked
 # the actual previously verified published reference.
-HF_REPO_CACHE='datasets--traingletrain--saddlebench-reference-private'
-PINNED_REGISTRY='85d37e55448b544473b34e7bb244823e80ddc85091bbe6ae3e771c7beb4b0a41'
+# Dataset adapters may supply any checksum-pinned Hugging Face dataset cache.
 
 
 def _trusted_diagnostic_file(private):
@@ -30,7 +29,7 @@ def _trusted_diagnostic_file(private):
         # the repository's blobs/ directory. Physical target location is not
         # an authoritative content identity: published SHA256 is.
         parents=list(source.parents)
-        repos=[p for p in parents if p.name==HF_REPO_CACHE]
+        repos=[p for p in parents if p.name.startswith('datasets--')]
         if len(repos)!=1:
             raise ValueError('DIAGNOSTIC_SYMLINK_NOT_IN_PINNED_HF_CACHE: '+str(source))
         repo=repos[0]
@@ -46,43 +45,17 @@ def _trusted_diagnostic_file(private):
 
 
 def verify_published_diagnostics(private,public_cases):
-    """Recheck official published reference checksum/registry contracts.
-
-    Snapshot symlinks are accepted only if the published reference metadata,
-    registry identity, and SHA256 file digests verify. Do not conflate content
-    integrity with cache-blob storage location.
-    """
-    import csv
+    """Validate diagnostic bytes against any self-described pinned reference."""
+    from saddlebench.score_modes import verify_reference
     root=Path(private)
     source=_trusted_diagnostic_file(root)
-    private_meta=json.loads((root/'private_manifest.json').read_text())
-    reference_meta=json.loads((root/'reference/manifest.json').read_text())
-    hashes=json.loads((root/'CHECKSUMS.json').read_text())
-    if (private_meta.get('source_registry_sha256')!=PINNED_REGISTRY or
-        reference_meta.get('registry_sha256')!=PINNED_REGISTRY):
-        raise ValueError('DIAGNOSTIC_REGISTRY_SHA_MISMATCH')
-    if private_meta.get('mode')!='all_saddles' or reference_meta.get('mode')!='all_saddles':
-        raise ValueError('DIAGNOSTIC_REFERENCE_MODE_MISMATCH')
-    if private_meta.get('case_count')!=123 or reference_meta.get('reference_count')!=2387:
-        raise ValueError('DIAGNOSTIC_REFERENCE_COUNTS_MISMATCH')
-    if not isinstance(hashes,dict) or 'diagnostic_saddles.jsonl.gz' not in hashes:
-        raise ValueError('PUBLISHED_DIAGNOSTIC_CHECKSUM_MISSING')
-    for rel,sha in hashes.items():
-        if (not isinstance(rel,str) or not rel or Path(rel).is_absolute() or
-            '..' in Path(rel).parts or not isinstance(sha,str) or len(sha)!=64):
-            raise ValueError('INVALID_PUBLISHED_CHECKSUM_ENTRY: '+str(rel))
-        target=root/rel
-        if not target.is_file() or digest_file(target)!=sha:
-            raise ValueError('PUBLISHED_REFERENCE_CHECKSUM_FAILED: '+str(rel))
-    if digest_file(root/'reference/reference.jsonl')!=reference_meta['reference_sha256']:
-        raise ValueError('REACTION_REFERENCE_HASH_MISMATCH')
-    with open(public_cases,newline='',encoding='utf8') as f:
-        rows=list(csv.DictReader(f))
-    if len(rows)!=123 or any(r.get('registry_sha256')!=PINNED_REGISTRY for r in rows):
-        raise ValueError('PUBLISHED_CASE_SNAPSHOT_MISMATCH')
+    verify_reference(root,public_cases)
+    checksums=json.loads((root/'CHECKSUMS.json').read_text())
+    if checksums.get('diagnostic_saddles.jsonl.gz') != digest_file(source):
+        raise ValueError('PUBLISHED_DIAGNOSTIC_CHECKSUM_MISMATCH')
     return {'diagnostic_source':str(source),'diagnostic_sha256':digest_file(source),
             'diagnostic_is_hf_snapshot_link':source.is_symlink(),
-            'published_checksum_count':len(hashes)}
+            'published_checksum_count':len(checksums)}
 
 
 def digest_file(path):
@@ -149,8 +122,8 @@ def make_nonfo_cache(private,cache_root):
     return record,meta,'BUILT'
 
 
-def load_nonfo_for_case(index_file,case):
-    """Same starting-minimum scope policy as frozen _prepare_diag_lookups."""
+def load_nonfo_for_case(index_file,case,require_starting_minimum=False):
+    """Structure-scoped diagnostic evidence; optional historical start filter."""
     selected=[]
     with open(index_file,'r',encoding='utf8') as reader:
         for line in reader:
@@ -158,7 +131,7 @@ def load_nonfo_for_case(index_file,case):
             if item.get('diagnostic_kind')!=NONFO_KIND:raise ValueError('CACHE_KIND_INVALID')
             if item['structure_id']!=case['structure_id']:continue
             starts=item.get('starting_minimum_ids') or []
-            if starts and case['starting_minimum_id'] not in starts:continue
+            if require_starting_minimum and starts and case.get('starting_minimum_id') not in starts:continue
             item['start_known']=bool(starts)
             selected.append(item)
     return selected

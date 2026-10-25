@@ -221,7 +221,7 @@ def load_reference(reference):
     if _sha_file(ref/'reference.jsonl')!=manifest['reference_sha256']:raise ValueError('TAMPERED_REFERENCE')
     return manifest,list(rows(ref,'reference.jsonl'))
 
-def read_submissions(path,start=None,pes=None,parent=None):
+def read_submissions(path,start=None,pes=None,parent=None,require_starting_minimum=True):
     path=Path(path)
     if path.suffix.lower()=='.traj':
         try:
@@ -251,7 +251,8 @@ def read_submissions(path,start=None,pes=None,parent=None):
             if value is not None:
                 if row.get(key) not in (None,value):raise ValueError('CONFLICTING_SUBMISSION_SCOPE:'+key)
                 row[key]=value
-        if not all(row.get(k) for k in ('starting_minimum_id','parent_structure_id','pes_id')):
+        required=('starting_minimum_id','parent_structure_id','pes_id') if require_starting_minimum else ('parent_structure_id','pes_id')
+        if not all(row.get(k) for k in required):
             raise ValueError('MISSING_SUBMISSION_SCOPE')
     return submissions
 
