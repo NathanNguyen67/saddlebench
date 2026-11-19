@@ -1,352 +1,57 @@
-# SaddleBench
+# SaddleBench UMA
 
-SaddleBench compares predicted saddle-point structures with a public collection of known chemical reactions and other saddle points. It tells you how many known reactions your search discovered and, if you choose, whether some predictions also resemble other saddle points in the reference dataset.
+SaddleBench scores predicted saddle geometries against a published per-seed reference for UMA-S-1.2.1. The scorer runs on a CPU with ASE, NumPy and PyArrow.
 
-You can score results on your own computer. SaddleBench does not run the searches for you, and your predicted structures are not uploaded.
+## Install and run
 
-**Research archive:** The separate resumable reaction SQLite exporter is now included in `tools.reaction_archive`. It does not change the public scoring reference. See [Reaction archive](docs/REACTION_ARCHIVE.md). The opt-in prepared maxdev performance path is described in [Maxdev preparation](docs/MAXDEV_PREPARATION.md).
-
-## Datasets
-
-| Dataset | What it contains | Link |
-| --- | --- | --- |
-| **Starting structures** | 123 starting structures, case information, and example submissions. Choose a structure here to start a saddle-point search. | [SaddleBench starting structures](https://huggingface.co/datasets/traingletrain/saddlebench-prototype) |
-| **Scoring reference** | Known eligible reactions and other registered saddle points used to evaluate your predictions. Includes 2,387 eligible reaction identities and 83,529 diagnostic saddle records. | [SaddleBench scoring reference](https://huggingface.co/datasets/traingletrain/saddlebench-reference-private) |
-
-**Both datasets are public.** The word `private` in the second dataset's address is part of its name; you do not need permission to download it. These counts describe the currently published collection, not the number of reactions in any single starting structure.
-
-## Scoring interface
-
-**`saddlebench score` is the default public interface.** It scores predictions at
-three independently rerun, published maxdev cutoffs: **0.20, 0.10 and 0.05 Å**.
-The terminal displays a colored **per-dataset leaderboard**, coverage, the
-median selected-reference maxdev across all matched predictions (including
-repeats), and the median of each discovered reaction's best observed selected
-match. This is **not** exhaustive nearest-reference geometry matching.
-
-The command writes a native JSON report, standalone HTML, and dataset SVG/PNG
-figures (PNG where a supported rasterizer is available). It does not automatically
-open an X11 viewer; use `--open-image` if desired. The model is ranked only when
-all submitted models evaluated identical case sets. All colors are for display,
-not scientific classification. Searches happen outside SaddleBench.
-
-The older provisional-score and diagnostic classifier is available explicitly via
-`saddlebench provisional-score`. The original local-reference extxyz scorer is
-`saddlebench legacy-score`. For backward compatibility, `saddlebench score`
-with an explicit `--mode score|score_detailed|coverage` invokes the earlier
-Hugging Face scorer, and `--reference` invokes the original local scorer.
-
-## Installation
-
-SaddleBench requires Python 3.10 or newer. Run:
-
-```bash
-git clone https://github.com/NathanNguyen67/saddlebench.git
+```sh
+git clone --branch uma-20261119 --single-branch https://github.com/NathanNguyen67/saddlebench.git
 cd saddlebench
-python -m pip install -e .
+python3.11 -m venv .venv
+. .venv/bin/activate
+python -m pip install .
+export OPENBLAS_NUM_THREADS=1
+export HF_HUB_DISABLE_XET=1
+
+saddlebench score --case-id case0046 --submission benchmarks/uma/quick.traj \
+  --confident-only --output quick.json
+saddlebench baseline --attempts benchmarks/uma/attempts.parquet --output baseline.csv
 ```
 
-Scoring runs on ordinary processor cores; a graphics processor is not required. After installation, `saddlebench` works from any directory with the installed Python environment active.
+The quick example is the published L05 rutile saddle `sad_3062f5ed8766c797cdb1` and a perturbed copy, each submitted twice. Expect four predictions scored, one eligible group, one match at each threshold, recall 1.0, and two outside-reference predictions forming one outside group.
 
-## Quick start
+The full benchmark writes one CSV row per structure and method. Expect 36,000 attempts, 33,099 converged, 27,894 scored geometries and 5,205 converged attempts without a public geometry link. See the [baseline results](benchmarks/uma/SUMMARY.md) for the method totals and reproduction details. Allow about 1.4 GiB for the Hugging Face cache. The first run downloads the case list, seed and reference records, saddle geometry index, and the ASE trajectory shards for the structures used. The quick example additionally fetches the endpoint-pair table. Subsequent runs reuse those files and check them against the export manifest. Use a fresh output filename for each run.
 
-**1. Select a starting structure.** Browse the [starting structures dataset](https://huggingface.co/datasets/traingletrain/saddlebench-prototype) and choose a case. For example, download `case0001`:
+## Score your own trajectory
 
-```bash
-hf download traingletrain/saddlebench-prototype minima/case0001.traj \
-  --repo-type dataset --local-dir inputs
+Find the ID for your starting minimum in the pinned [case list](https://huggingface.co/datasets/traingletrain/saddlebench-uma/blob/acdac15b98282a9137a76c060913fcc0ce08462b/cases.csv). Use an ASE `.traj` or extended XYZ file containing one predicted saddle per frame, with the seed's atom order, simulation cell and periodic boundary conditions. The command assigns all frames to the specified case. Report search wall time in seconds and total physical potential energy surface (PES) calls if available.
+
+```sh
+saddlebench score --case-id case0046 --submission my-predictions.traj \
+  --elapsed-seconds 532 --physical-pes-calls 1250 --output my-score.json
 ```
 
-**2. Run your saddle-point search.** Use any method you want, starting from the downloaded structure. Save the predicted saddle geometries as an ASE trajectory file (`.traj`), with one frame for each prediction. Keep the same atoms in the same order and preserve the simulation cell and periodic boundary conditions. See [Submission format](docs/SUBMISSION_FORMAT.md) for requirements.
+Add `--confident-only` to require a seed that reached the export's shuffled-tail confidence criterion. The command prints JSON and can also save it using `--output`. Use `--cache-dir` to set a separate Hugging Face cache location.
 
-**3. Score your predictions.** By default this displays the **colored
-three-tolerance coverage/geometry leaderboard** and saves JSON, HTML, and SVG/PNG:
+The eligible reference comes from the published per-seed records for seed-connected saddle groups with a complete DoubleMin, distinct endpoints and a representative barrier strictly below 1.0 eV. A prediction gets credit for the closest eligible group within core-drift maximum deviation of 0.20 Å, with ties resolved by saddle ID. A group counts once per seed and submission. The tighter 0.10 and 0.05 Å columns report the same rule at smaller thresholds. Recall is matches divided by eligible groups, or null when there are zero eligible groups.
 
-```bash
-saddlebench score \
-  --case-id case0001 \
-  --submission predicted_saddles.traj \
-  --elapsed-seconds 3600 \
-  --output results.json
-```
+An outside-reference prediction has no eligible geometry within 0.20 Å. The report gives both the number of these frames and the number of distinct outside groups. To count distinct outside groups, visit unmatched frames in submission order and add a representative only when it is farther than 0.20 Å from every earlier representative under the same geometry criterion. Repeated frames therefore contribute one outside group.
 
-For a purely terminal/JSON evaluation, add `--no-html --no-image`.
-To force ANSI color in a piped terminal add `--color`; `--open-image` requests
-an X11 viewer when available. Your predictions remain on your machine.
+The score returns the selected original endpoint-pair record for each matched group, including its published observation counts. Pair selection uses the case's seed connection, then the lowest sum of canonical `energy_a_eV` and `energy_b_eV`, then canonical endpoint IDs for ties. All original pairs are available in the public `endpoint_pairs.parquet`.
 
-To reproduce the **earlier, separate provisional-score method**, run:
+## Baseline data and metrics
 
-```bash
-saddlebench provisional-score \
-  --case-id case0001 --submission predicted_saddles.traj \
-  --elapsed-seconds 3600 --mode score --output provisional.json
-```
+The bundled [attempt table](benchmarks/uma/attempts.parquet) includes all columns and all 36,000 rows from `benchmark_cohort == 'bench_20261118'` at Hugging Face revision `acdac15b98282a9137a76c060913fcc0ce08462b`. The cohort contains 500 attempts per method per seed for 36 seeds spanning 35 literature, Al and Pt structures. The two method IDs are `sella_prfo_diag4_abs01` and `tsbfgs_dimer_rot4_frot01_r23_allprobes`. To fetch and filter the pinned public table directly, run the same command with the `--attempts` option omitted.
 
-`--elapsed-seconds` is the **time spent running your saddle-point search**, including attempts that produced no usable result. It is **not** the time SaddleBench takes to evaluate the predictions.
+Each converged row with a geometry link is scored using its public saddle-group representative. Several attempts may point to the same representative. Converged rows without a representative stay in the convergence and cost totals and have a separate unscored count. All attempts contribute to the denominator for convergence and to the summed reported search wall time in seconds. Reference group counts and eligibility are computed per seed and summed within the structure and method. An empty cost-per-group field means the run found zero eligible groups or some PES call counts are missing. The scorer prints its elapsed time separately from the search times in the CSV.
 
-SaddleBench downloads and verifies the public scoring reference automatically. It writes a JSON report to the path you provide and does not overwrite an existing output file. The predicted geometries remain on your machine.
+These searches helped build the answer key. Their recall can be optimistic for a method evaluated independently. [Pinned UMA dataset and export documentation](https://huggingface.co/datasets/traingletrain/saddlebench-uma/tree/acdac15b98282a9137a76c060913fcc0ce08462b)
 
-## Scoring multiple starting structures
+## Reference limitations
 
-Make a file called `submission.csv` containing the case identifier, the trajectory path, and the total search time for each case:
+- The campaign omitted Hessian checks and the stored DoubleMin endpoints are unverified. At the production 0.25 Å push, LBFGS sometimes stopped at a neighboring first-order saddle. Three Al examples are `min_d1023d…`, `min_088eac…` and `min_1ff305…`, each about 0.168 eV above its seed. The export preserves all observed pairs and flags groups with more than two distinct endpoints as `multi_endpoint_saddle`.
+- Near-degenerate or symmetry-equivalent minima can have different identities. Roughly 10,000 saddles outside the reference have an endpoint within 20 meV of the seed and farther than 0.20 Å. For C06_flat, two N₂ dissociation saddles with a barrier of about 0.954 eV came from a minimum 0.018 eV above the seed and 0.46 Å away. The published seed-specific reference excludes them.
 
-```csv
-case_id,trajectory,elapsed_seconds
-case0001,predictions_case0001.traj,3600
-case0002,predictions_case0002.traj,4800
-```
+## Previous scoring commands
 
-Then run:
-
-```bash
-saddlebench score \
-  --submission-csv submission.csv \
-  --output batch_score.json
-```
-
-To use more than one processor core for **different cases**, set `--processes`:
-
-```bash
-saddlebench score \
-  --submission-csv submission.csv \
-  --mode score_detailed \
-  --processes 2 \
-  --output batch_detailed.json
-```
-
-**The default is `--processes 1`**, so scoring runs serially. Parallel processing divides separate cases among the requested workers; it does not divide a single case among cores. You can use `--processes 4` for four cases, for example, if your computer has sufficient memory. Relative trajectory paths in the spreadsheet are resolved relative to the spreadsheet file.
-
-### Comparing different models on the same starting structure
-
-**Leaderboard display:** `CASE` shows only the numeric suffix of the published
-case ID (`case0006` -> `6`). `DATASET` is the uppercase namespace prefix of
-the case's published `structure_id` (for example, `oc20:...` -> `OC20`). If
-no dataset namespace is available, the table shows `-` rather than guessing.
-The input CSV still uses full identifiers such as `case0006`; only terminal
-presentation changes. All matching and score calculations are unchanged.
-
-
-Add an optional `model` column to the same `submission.csv`. One row is one
-**(model, case)** submission; different models may score the same case. The
-`model` label is for reporting only and does not affect matching or scoring.
-
-```csv
-model,case_id,trajectory,elapsed_seconds
-SEL04-M24,case0006,sella_case0006.traj,532
-ForceBank-Fourier,case0006,forcebank_case0006.traj,575
-SEL04-M24,case0022,sella_case0022.traj,1114
-ForceBank-Fourier,case0022,forcebank_case0022.traj,1050
-```
-
-```bash
-saddlebench score \
-  --submission-csv submission.csv --mode score_detailed \
-  --processes 2 --output comparison.json
-```
-
-This prints a **model-level aggregate leaderboard by default** (one row per model),
-with reference coverage, mean historical reference-confidence heuristic,
-first-hit diagnostic counts, penalized bad groups and score/hour. The score
-and group totals use the existing aggregation; no formulas are changed.
-Use `--view case` to display the previous per-case ranked table.
-For unlabeled CSVs or single-case commands, the existing case view is used.
-The model leaderboard ranks only when all models have identical submitted
-case sets; this does **not** verify a complete benchmark cohort. ANSI color is automatic on compatible terminals and
-absent when output is redirected; set `NO_COLOR=1` to disable colors.
-
-CSV submissions **without** a `model` column retain the prior behavior and
-native JSON schema. A model-labeled CSV writes a separate
-`saddlebench-quick-model-comparison-v1` JSON report containing the existing
-`case_results` plus `model` labels and `model_aggregates`; it does not merge
-separate model results into a scientifically meaningless overall score.
-Duplicate `(model, case_id)` pairs are rejected. Per-model aggregate ranks are
-printed only when all models were scored on the same set of cases.
-`--view` only changes the terminal display, not the JSON report.
-Terminal options: `--view model` (default for model-labeled CSV) and
-`--view case` (individual case comparison). Model-level `REF%` is the
-arithmetic mean of the *published historical* case confidence heuristics,
-shown only when all submitted cases have usable reference metadata; it is
-not a calibrated probability of exploration completeness.
-
-### Prediction-level percentages: RED% and ELIG%
-
-- **RED%** = `100 * duplicate eligible-reaction predictions / N`. A duplicate
-  means a prediction matched an eligible reaction identity already credited
-  earlier in that same case and model submission. This is **not** an
-  exhaustive geometric redundancy measurement.
-- **ELIG%** = `100 * predictions matched to eligible reactions / N`,
-  including both first credits and duplicates. This is a reference
-  matching rate, **not** an independent connectedness measurement.
-- **N** = total submitted prediction frames. Model-level RED% and ELIG%
-  use totals across its submitted cases, rather than averaging case
-  percentages. When `N=0`, both percentages display `-`.
-
-These metrics affect **terminal presentation only**; scoring, JSON
-output and reference definitions are unchanged.
-
-**Display legend:** `N` predictions, `U/K` distinct discovered/known eligible
-reactions, `COV%` coverage, `CONF%` historical reference-exploration heuristic,
-`HIT` predictions matched by a checked stage, `DUP` eligible repeats,
-`NF` known non-first-order first hits, `HB` known connected high-barrier first
-hits, `OTH` other diagnostic first hits, `UNM` unmatched in checked stages,
-`B` distinct first-hit penalized bad saddle groups, `SEC` search seconds,
-`S/H` provisional score/hour. Unknown predictions are not automatically bad.
-The confidence heuristic is not the probability that all saddles are known.
-
-## Scoring formula
-
-Reaction coverage for one starting structure is
-
-```text
-coverage = U / K
-```
-
-The reported provisional score per hour is
-
-```text
-score_per_hour = 100 * (U / K)^2 * (U / (U + 2*B)) * (3600 / T)
-```
-
-- **U:** distinct eligible reaction identities discovered by first-hit matching.
-- **K:** number of known eligible reaction identities for this starting structure.
-- **B:** distinct first-hit potential-bad *saddle groups*, including groups whose
-  starting-minimum provenance is unrecorded. This is **not** a certified or
-  exhaustive count of bad reactions.
-  Existing JSON fields ending in `_with_known_start` retain their names for
-  compatibility, but now count groups with unrecorded starts too.
-- **T:** total self-reported search time in **seconds**, including unsuccessful
-  attempts. This is search time, not the scoring program's runtime.
-
-`coverage` mode skips bad-saddle diagnostics (`B=0` in the score preview).
-`score` mode considers known non-first-order first hits; `score_detailed`
-additionally considers known connected high-barrier saddles. The matching
-modes may produce different first-hit estimates. A score is zero for `U=0`
-and undefined (`null`) if `K=0`.
-
-### Reference exploration confidence (heuristic)
-
-The terminal summary separately shows the **published reference's historical
-exploration-confidence heuristic for each case**. It is read from the verified
-published `cases.csv`, and **not** calculated from the new submission.
-
-```text
-n_red = mean redundant eligible observations after the last new reaction
-        across shuffled historical observation sequences
-exploration_confidence = clamp(1 - 10 / n_red, 0, 1)
-```
-
-When there is insufficient historical rediscovery evidence, the confidence
-is unavailable (`N/A`). This is a redundancy-based heuristic, **not** a
-calibrated probability that all physical saddles/reactions are known, and
-not a confidence interval on a new submission's `U/K` coverage.
-
-### Terminal summary
-
-After writing the unchanged, machine-readable JSON score,
-`scripts/score_from_hf.py` also prints coverage, score preview, reference
-exploration confidence, prediction-match classifications, and (when checked
-by the mode) known non-first-order and connected high-barrier first hits.
-First-hit bad-saddle matches and groups are **not** canonical verified counts
-of bad reactions. Unknown predictions are not automatically wrong or novel.
-This is display-only: scoring definitions, reference matching, and the native
-JSON schema remain unchanged.
-
-## Understanding the results
-
-**Coverage** is the fraction of known eligible reactions discovered for a case. For example, discovering 4 distinct eligible reactions out of 10 gives 40% coverage; discovering the same reaction multiple times does not increase it.
-
-**The provisional score** also considers how long the search took and possible matches to certain saddle points that are not eligible reactions. A search that finds more distinct eligible reactions in less time generally receives a higher score. The different modes examine different sets of reference saddles, so their provisional scores are not necessarily identical.
-
-**Other known saddle points** are why `score_detailed` exists. A predicted structure might not qualify for reaction credit but could still match a previously registered saddle. The detailed mode checks the broader reference collection and reports the first matching diagnostic category, when one is found. Not finding a match does not prove the prediction is incorrect or novel.
-
-### How matching and scoring work
-
-SaddleBench compares saddle geometries within the same starting-structure and simulation-cell scope. A match must pass the same exact geometric criterion in every mode: a maximum core-drift displacement of **0.2 angstrom or less**. Atom order and periodic boundary conditions must be compatible. Matching is based on geometry, not on reaction-network connectivity inferred from atom bonds.
-
-To keep evaluation fast, the scorer groups nearby reference structures and checks likely matches first. **It stops after the first confirmed match for a prediction.** Eligible reaction matches take priority over matches to other saddle-point categories. `score` checks known non-first-order saddles when no eligible reaction was found; `score_detailed` additionally searches the remaining diagnostic categories.
-
-This stopping rule makes scoring faster, but it has an important limitation: a single prediction may resemble more than one reference reaction or saddle category. The reports do **not** list all such possibilities and do **not** determine an exhaustive count of bad saddle identities. Their provisional scores should therefore be interpreted as quick comparisons, not exhaustive classifications.
-
-For users comparing results across multiple cases, the reported score also uses the **search times you supply**, not a timing measured by SaddleBench.
-
-## Scope and limitations
-
-The published reference includes reactions meeting its criteria for verified saddle and endpoint optimizations, connectivity, and an energy barrier strictly below 1.5 electronvolts. Not every previously registered saddle is an eligible reaction. The reference is not an exhaustive list of all possible reactions or saddles, and its potential-energy-model provenance has not been independently verified. Results from different energy models may not be comparable.
-
-The benchmark is an openly available research resource rather than an independently certified leaderboard. Unknown predictions are not automatically wrong, and the results do not establish that every possible reaction has been discovered.
-
-## Tests
-
-To test the installed scoring software, install `pytest` and run:
-
-```bash
-python -m pip install pytest
-python -m pytest -q
-```
-
-The tests check software behavior and example fixtures; they do not establish that the published scientific reference is complete.
-
-**Other interface:** The separately installed `saddlebench score` command supports a local-reference/extxyz workflow. The `score`, `score_detailed`, and `coverage` settings documented above are selected with `--mode` in `scripts/score_from_hf.py` for the public dataset workflow.
-
-### Experimental greedy coverage tiers (separate read-only CLI)
-
-The normal `scripts/score_from_hf.py` scoring modes and JSON outputs remain unchanged.
-Use `scripts/coverage_tiers_from_hf.py` with the same model-labeled (or legacy)
-submission CSV to evaluate **eligible-reaction greedy coverage** independently
-at core-drift maxdev cutoffs of 0.20, 0.10 and 0.05 Angstrom. No non-FO or
-other diagnostic catalog matching is performed. The same verified Hugging Face
-reference, eligible reactions, indexes, and case scoping are used.
-
-```bash
-PYTHONPATH="$HOME/saddlemill_jobs/saddlebench_published" \
-/home/ndn454/fairchem_audit_222_223/venvs/fairchem222/bin/python \
-"$HOME/saddlemill_jobs/saddlebench_published/scripts/coverage_tiers_from_hf.py" \
-  --submission-csv "$HOME/saddlemill_jobs/sb_score_demo_20261014T164830Z/submission.csv" \
-  --processes 2 --output "$HOME/saddlemill_jobs/coverage_tiers_$(date +%s).json"
-```
-
-`--view case` prints individual starting minima; model view is the default.
-`COV@.20`, `COV@.10`, and `COV@.05` are **micro** coverage at three
-independently rerun greedy first-hit thresholds. Macro coverage is in the
-separate diagnostic JSON. `MED-G` (Angstrom) is the median selected-reference
-maxdev of the FIRST credited prediction for each reaction at 0.20 A.
-`MED-BESTG` is the median, over credited reactions, of the LOWEST observed
-selected-reference maxdev across all predictions greedily assigned that
-reaction. It does NOT exhaust the nearest reference geometry per prediction.
-Neither median includes unmatched reactions. Each tier's own median is also
-in the diagnostic JSON. The new diagnostic JSON schema is
-`saddlebench-greedy-coverage-tiers-v1` and is NOT the native quick-score schema.
-Existing `score`, `score_detailed`, and `coverage` scientific definitions and
-thresholds are unchanged. This is a new experimental evaluation metric, not
-independent proof of stationary-point validity or DoubleMin connectedness.
-
-### SaddleBench dev: prepared matching and reaction SQLite diagnostics (2026-10-24)
-
-The prepared maxdev kernel was tested against 8,128 real Pt-343 pairs on LS6
-and accelerated default `score()` comparisons by reusing validated reference
-arrays per scoring operation. See `docs/MAXDEV_PREPARATION.md` for timings and
-parity. The standalone SQLite exporter remains under `tools/reaction_archive/`.
-Its completion on LS6 is not confirmed by the maxdev benchmark. To inspect
-only the recorded archive metadata on a vm-small allocation without a full
-integrity scan, run `bash scripts/peek_reaction_archive_on_idev.sh`. The output
-marker does not constitute a new integrity check. See `docs/REACTION_ARCHIVE.md`.
-
-## Cutoff-neutral reaction catalog (v0.3.0rc1 candidate)
-
-In addition to the historical preselected scoring reference, `saddlebench score`
-now accepts an independently generated, checksum-verified
-`--catalog-root /path/to/catalog` or the generic HF transport adapter
-`--catalog-repo OWNER/DATASET --catalog-prefix catalogs/ID`.
-The catalog supplies reaction membership and scientific-evidence status; the
-scorer performs exact maxdev matching and dynamically calculates K under
-an optional **barrier <1.0 eV** default policy. Use `--barrier-max-eV X`
-or `--no-barrier-cutoff`. Starting-minimum matching is OFF unless explicitly
-requested with `--require-starting-minimum`.
-
-Catalogs derived from the 2026-10-24 lean SaddleMill export have **no independently
-verified force-convergence status**. These rows are excluded from strict score
-credit; `--allow-registry-reported-evidence` enables clearly labeled
-**exploratory** registry-based coverage, not an official scientific certification.
-See `docs/SCORING_CATALOG_V2_20261024.md` for provenance, exact commands, and
-limitations. The previously published historical scoring reference remains
-accessible and unchanged.
+The former default coverage leaderboard is available as `saddlebench coverage-score`, including its submission CSV format. Explicit `--reference` scoring, `legacy-score`, `provisional-score` and `render` remain available for the earlier reference formats. [Previous release instructions](https://github.com/NathanNguyen67/saddlebench/blob/afa190746a5acc97e732219812cd7a2485161625/README.md)

@@ -13,8 +13,14 @@ def main(argv=None):
         if any(a == '--mode' or a.startswith('--mode=') for a in args[1:]):
             from saddlebench.score_modes import main as previous
             return previous(args[1:])
-        from saddlebench.coverage_tiers import main as latest
+        from saddlebench.uma_cli import main as latest
         return latest(args[1:])
+    if args and args[0]=='baseline':
+        from saddlebench.uma_baseline import main as baseline
+        return baseline(args[1:])
+    if args and args[0]=='coverage-score':
+        from saddlebench.coverage_tiers import main as coverage
+        return coverage(args[1:])
     if args and args[0]=='provisional-score':
         from saddlebench.score_modes import main as previous
         return previous(args[1:])
@@ -25,8 +31,10 @@ def main(argv=None):
         from saddlebench.coverage_leaderboard import main as render
         return render(args[1:])
     if not args or args[0] in ('-h','--help'):
-        print('usage: saddlebench {score|provisional-score|legacy-score|render} [options]')
-        print('  score               DEFAULT: 0.20/0.10/0.05 A colored coverage/geometry leaderboard')
+        print('usage: saddlebench {score|baseline|coverage-score|provisional-score|legacy-score|render} [options]')
+        print('  score               DEFAULT: public UMA per-seed recall at 0.20/0.10/0.05 A')
+        print('  baseline            Reproduce the public UMA benchmark')
+        print('  coverage-score      Archived HF coverage leaderboard')
         print('  provisional-score   Previous HF provisional score and diagnostic counts')
         print('  legacy-score        Original local-reference extxyz scorer')
         print('  render              Render an existing coverage-tier JSON without rescoring')

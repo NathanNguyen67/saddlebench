@@ -28,12 +28,13 @@ class PreparedReferenceMatcher:
         self.prepared = {}
         self.prepare = prepare_geometry
 
-    def match(self, submission):
+    def match(self, submission, *, candidates=None):
         from saddlebench.matching.geometry import core_drift_maxdev_prepared
         matches = []
         incompatible = set()
-        candidates = ((self.snapshot.by_numbers or {}).get(tuple(submission['geometry']['numbers']), ())
-                      if self.snapshot.by_numbers is not None else self.snapshot.records)
+        if candidates is None:
+            candidates = ((self.snapshot.by_numbers or {}).get(tuple(submission['geometry']['numbers']), ())
+                          if self.snapshot.by_numbers is not None else self.snapshot.records)
         # Preserve original matching behavior for malformed query geometry.
         query = None
         query_error = None

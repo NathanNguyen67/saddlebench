@@ -11,9 +11,9 @@ class PublicRouteTests(unittest.TestCase):
             seen.append(list(args));return 17
         m.main=invoke
         return m
-    def test_default_score_reaches_three_tiers(self):
-        seen=[];a=['score','--submission-csv','x.csv','--output','x.json']
-        with patch.dict(sys.modules,{'saddlebench.coverage_tiers':self._stub('saddlebench.coverage_tiers',seen)}):
+    def test_default_score_reaches_uma(self):
+        seen=[];a=['score','--case-id','case0001','--submission','x.traj']
+        with patch.dict(sys.modules,{'saddlebench.uma_cli':self._stub('saddlebench.uma_cli',seen)}):
             self.assertEqual(main(a),17)
         self.assertEqual(seen,[a[1:]])
     def test_previous_explicit_mode_remains(self):

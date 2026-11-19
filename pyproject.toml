@@ -6,7 +6,7 @@ name = "saddlebench"
 version = "0.3.0rc1"
 description = "Standalone reference-matched, uncertainty-preserving saddle geometry scorer"
 requires-python = ">=3.10"
-dependencies = ["numpy>=1.23", "ase>=3.22", "huggingface_hub>=0.25"]
+dependencies = ["numpy>=1.23", "ase>=3.22", "huggingface_hub>=0.25", "pyarrow>=16"]
 [project.scripts]
 saddlebench = "saddlebench.public_entrypoint:main"
 [tool.setuptools.packages.find]
