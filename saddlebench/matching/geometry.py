@@ -167,9 +167,8 @@ def core_drift_maxdev(a,b):
     return float(np.max(np.linalg.norm(corrected,axis=1)))
 
 
-# Opt-in prevalidated representation for repeated comparisons. No global caches:
-# caller owns lifecycle and mutations of the source JSON cannot silently alter
-# the prepared data. Public core_drift_maxdev retains its full validation path.
+# Prepared positions are owned by each caller. Only immutable cell factors
+# are shared across geometries. The public scalar path retains validation.
 from dataclasses import dataclass
 
 
@@ -241,25 +240,46 @@ def _prepare_skew_mic(basis):
                            sigma, scale, images)
 
 
+@lru_cache(maxsize=128)
+def _prepare_cell(values, pbc):
+    cell = np.asarray(values).reshape(3, 3)
+    if not any(pbc):
+        return None, None, None
+    basis = cell[np.asarray(pbc, dtype=bool)].T
+    gram = basis.T @ basis
+    diag = np.diag(gram)
+    offdiag = gram - np.diag(diag)
+    if (np.all(diag > 1e-20) and
+            np.all(np.abs(offdiag) <= 1e-14*np.sqrt(np.outer(diag, diag)))):
+        return _readonly(basis), _readonly(diag), None
+    return None, None, _prepare_skew_mic(basis)
+
+
 def prepare_geometry(g):
     """Validate once and snapshot read-only geometry and MIC cell factors."""
     validate_geometry(g)
-    cell = np.array(g['cell_angstrom'], dtype=float, copy=True)
-    pos = np.array(g['positions_angstrom'], dtype=float, copy=True)
+    return _prepare_arrays(g)
+
+
+def prepare_array_geometry(g):
+    """Prepare geometry constructed from ASE's typed arrays."""
+    if not isinstance(g['positions_angstrom'], np.ndarray):
+        return prepare_geometry(g)
+    pos = g['positions_angstrom']
+    cell = g['cell_angstrom']
+    numbers = g['numbers']
+    if (not numbers or any(not 1 <= z <= 118 for z in numbers)
+            or pos.shape != (len(numbers), 3) or not np.isfinite(pos).all()
+            or cell.shape != (3, 3) or not np.isfinite(cell).all()):
+        raise ValueError('INVALID_ASE_GEOMETRY')
+    return _prepare_arrays(g)
+
+
+def _prepare_arrays(g):
+    cell = _readonly(g['cell_angstrom'])
+    pos = _readonly(g['positions_angstrom'])
     pbc = tuple(g['pbc'])
-    orth_basis = orth_lensq = skew = None
-    if any(pbc):
-        candidate = cell[np.asarray(pbc, dtype=bool)].T
-        gram = candidate.T @ candidate
-        diag = np.diag(gram)
-        offdiag = gram - np.diag(diag)
-        if (np.all(diag > 1e-20) and
-                np.all(np.abs(offdiag) <= 1e-14*np.sqrt(np.outer(diag, diag)))):
-            orth_basis, orth_lensq = _readonly(candidate), _readonly(diag)
-        else:
-            skew = _prepare_skew_mic(candidate)
-    cell.setflags(write=False)
-    pos.setflags(write=False)
+    orth_basis, orth_lensq, skew = _prepare_cell(tuple(cell.flat), pbc)
     return PreparedGeometry(tuple(g['numbers']), pbc, pos, cell,
                             orth_basis, orth_lensq, skew)
 
@@ -351,6 +371,21 @@ def cannot_match_by_anchor(a,b,maxdev):
     return bool(np.any(np.linalg.norm(relative,axis=1)>2*float(maxdev)+1e-8))
 
 
+@lru_cache(maxsize=128)
+def _screen_cell(values, pbc):
+    orthogonal, _, skew = _prepare_cell(values, pbc)
+    if skew is not None:
+        return skew.basis, skew.sigma, skew.projection
+    if orthogonal is None:
+        return None, None, None
+    singular = np.linalg.svd(orthogonal, compute_uv=False)
+    sigma, scale = float(singular[-1]), float(singular[0])
+    if not np.isfinite(sigma) or sigma <= 1e-10*max(1., scale) or scale/sigma > 20.:
+        return orthogonal, None, None
+    projection = np.linalg.solve(orthogonal.T @ orthogonal, orthogonal.T).T
+    return orthogonal, sigma, _readonly(projection)
+
+
 class BatchedAnchorFilter:
     """Conservative, bounded vectorized anchor rejection for an ordered sequence.
 
@@ -409,41 +444,36 @@ class BatchedAnchorFilter:
 
     def possible(self, query, maxdev):
         """Return ordered True=must-check mask, with no false match omissions."""
-        keep = np.ones(self.size, dtype=bool)
+        return self.lower_bounds(query, maxdev) <= maxdev
+
+    def lower_bounds(self, query, maxdev):
+        """Conservative per-candidate bounds on core-drift maxdev."""
+        squared = np.zeros(self.size)
         try:
             numbers = tuple(query['numbers'])
             pbc = tuple(query['pbc'])
             bucket = self.buckets.get((numbers, pbc))
             if bucket is None:
-                return keep
+                return squared
             query_pos = np.asarray(query['positions_angstrom'], dtype=float)
             cell = np.asarray(query['cell_angstrom'], dtype=float)
             n = len(numbers)
             if (len(pbc) != 3 or query_pos.shape != (n, 3)
                     or cell.shape != (3, 3) or not np.isfinite(query_pos).all()
                     or not np.isfinite(cell).all()):
-                return keep
+                return squared
             anchor = query_pos[self._selected(n)]
             indices, positions, cells, sample = bucket
-            periodic = np.asarray(pbc, dtype=bool)
-            if periodic.any():
-                basis = cell[periodic].T
-                singular = np.linalg.svd(basis, compute_uv=False)
-                sigma = float(singular[-1])
-                scale = float(singular[0])
-                # Ill-conditioned cells, including nearly singular cells,
-                # are always handled by the existing exact scalar code.
-                if (not np.isfinite(sigma) or sigma <= 1e-10*max(1., scale)
-                        or scale/sigma > 20.):
-                    return keep
-                projection = np.linalg.solve(basis.T @ basis, basis.T).T
-            else:
-                basis = None
+            basis, sigma, projection = _screen_cell(tuple(cell.flat), pbc)
+            if any(pbc) and projection is None:
+                return squared
             # Extra guard is intentionally larger than the scalar filter's
             # 1e-8: near-threshold candidates go through the old exact path.
             guard = 1e-7 * (1. + float(maxdev))
-            cutoff = 2. * float(maxdev) + 1e-8 + guard
-            def reject(rel):
+            slack = 1e-8 + guard
+            cutoff_sq = (2. * float(maxdev) + slack)**2
+
+            def bound_squared(rel):
                 rel -= rel[:, :1, :]
                 # Skip numerically unsafe vectors individually. An inconclusive
                 # added atom cannot undo a rejection proved by another atom.
@@ -461,20 +491,22 @@ class BatchedAnchorFilter:
                     lower_sq = (np.einsum('ij,ij->i', normal, normal)
                                 + sigma*sigma*np.einsum('ij,ij->i', residue, residue))
                     lower_sq = lower_sq.reshape(len(rel), -1)
-                return ((lower_sq > cutoff*cutoff) & np.isfinite(lower_sq)).any(axis=1)
+                np.copyto(lower_sq, 0., where=~np.isfinite(lower_sq))
+                return lower_sq.max(axis=1)
 
             for lo in range(0, len(indices), self.chunk_size):
                 hi = min(lo + self.chunk_size, len(indices))
                 compatible = np.max(np.abs(cells[lo:hi] - cell), axis=(1, 2)) <= 0.05
                 rows = lo + np.flatnonzero(compatible)
                 if sample is not None and rows.size:
-                    rejected = reject(positions[rows[:, None], sample] - anchor[sample])
-                    keep[indices[rows[rejected]]] = False
-                    rows = rows[~rejected]
+                    coarse = bound_squared(positions[rows[:, None], sample] - anchor[sample])
+                    squared[indices[rows]] = coarse
+                    rows = rows[coarse <= cutoff_sq]
                 if rows.size:
-                    keep[indices[rows[reject(positions[rows] - anchor)]]] = False
+                    keys = indices[rows]
+                    squared[keys] = np.maximum(squared[keys], bound_squared(positions[rows] - anchor))
         except (KeyError, TypeError, ValueError, OverflowError, IndexError,
                 np.linalg.LinAlgError, FloatingPointError):
             # No partial rejection if numerical certification failed.
-            return np.ones(self.size, dtype=bool)
-        return keep
+            return np.zeros(self.size)
+        return np.maximum(0., (np.sqrt(squared) - slack) / 2.)

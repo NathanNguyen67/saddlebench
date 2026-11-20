@@ -82,11 +82,12 @@ class BenchmarkSearchFrames:
         info = self.manifest["structures"][parent]
         name = info["shard"]
         path = self.download(name)
-        verify_file(path, info["sha256"], name)
-        with gzip.open(path, "rb") as compressed:
-            with Trajectory(BytesIO(compressed.read())) as shard:
-                for atoms in shard:
-                    yield atoms.info["saddlebench_attempt_seq"], atoms
+        compressed = path.read_bytes()
+        if hashlib.sha256(compressed).hexdigest() != info["sha256"]:
+            raise ValueError(f"UMA manifest checksum mismatch for {name}: {path}")
+        with Trajectory(BytesIO(gzip.decompress(compressed))) as shard:
+            for atoms in shard:
+                yield atoms.info["saddlebench_attempt_seq"], atoms
 
 
 def select_endpoint_pair(pairs, minimum_id):

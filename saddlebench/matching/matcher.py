@@ -22,13 +22,14 @@ class PreparedReferenceMatcher:
     match() remains unchanged for applications that mutate input dictionaries.
     """
 
-    def __init__(self, snapshot):
+    def __init__(self, snapshot, *, prepare=None):
         from saddlebench.matching.geometry import prepare_geometry
         self.snapshot = snapshot
         self.prepared = {}
-        self.prepare = prepare_geometry
+        self.prepare = prepare_geometry if prepare is None else prepare
 
-    def match(self, submission, *, candidates=None, first=False):
+    def match(self, submission, *, candidates=None, first=False, ordered_bounds=None):
+        """With sorted lower bounds, only the nearest match is guaranteed."""
         from saddlebench.matching.geometry import core_drift_maxdev_prepared
         matches = []
         incompatible = set()
@@ -38,7 +39,12 @@ class PreparedReferenceMatcher:
         # Preserve original matching behavior for malformed query geometry.
         query = None
         query_error = None
-        for r in candidates:
+        limit = 0.20
+        candidates_with_bounds = (ordered_bounds if ordered_bounds is not None
+                                  else ((0., row) for row in candidates))
+        for lower, r in candidates_with_bounds:
+            if lower > limit:
+                break
             try:
                 if query is None and query_error is None:
                     try:
@@ -56,7 +62,9 @@ class PreparedReferenceMatcher:
             except ValueError as exc:
                 incompatible.add(str(exc))
                 continue
-            if distance <= 0.2:
+            if distance <= limit:
+                if ordered_bounds is not None:
+                    limit = distance
                 matches.append({'reference_id': r['reference_id'],
                                 'identity_id': r['identity_id'],
                                 'maxdev_angstrom': distance})

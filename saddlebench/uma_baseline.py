@@ -24,7 +24,7 @@ def load_attempts(dataset, path=None):
         return pq.read_table(handle)
 
 
-def summarize(scoring, attempts, search, workers=1):
+def summarize(scoring, attempts, search, workers=1, *, group_outside=True):
     rows = attempts.to_pylist()
     groups = Counter((row["minimum_id"], row["method_id"]) for row in rows)
     if (len(rows) != 36000 or len({row["seq"] for row in rows}) != 36000
@@ -41,7 +41,7 @@ def summarize(scoring, attempts, search, workers=1):
         by_structure[parent][mid, row["method_id"]].append(row)
 
     structures = sorted(by_structure.items())
-    score = partial(score_structure, scoring=scoring, search=search)
+    score = partial(score_structure, scoring=scoring, search=search, group_outside=group_outside)
     if workers == 1:
         for item in structures:
             yield from score(item)
@@ -62,7 +62,7 @@ def summarize(scoring, attempts, search, workers=1):
             yield from jobs[parent].result()
 
 
-def score_structure(item, *, scoring, search):
+def score_structure(item, *, scoring, search, group_outside):
     parent, submissions = item
     seeds = sorted({mid for mid, _ in submissions})
     expected = {row["seq"] for group in submissions.values() for row in group if row["converged"]}
@@ -70,7 +70,7 @@ def score_structure(item, *, scoring, search):
     for seq, atoms in search.frames(parent):
         if seq in frames:
             raise ValueError(f"Duplicate Search geometry for attempt {seq}")
-        frames[seq] = geometry(atoms)
+        frames[seq] = geometry(atoms, arrays=True)
     if frames.keys() != expected:
         raise ValueError(f"Search geometry coverage differs from converged attempt rows for {parent}")
     scorers = scoring.structure(parent, seeds)
@@ -82,12 +82,15 @@ def score_structure(item, *, scoring, search):
         converged = [row for row in group if row["converged"]]
         counts["converged"] += len(converged)
         report = scorers[mid].score(
-            frames[row["seq"]] for row in converged
+            (frames[row["seq"]] for row in converged), group_outside=group_outside,
         )
         counts["predictions_scored"] += report["predictions_scored"]
         counts["eligible_reference_groups"] += report["eligible_reference_groups"]
         counts["outside_reference_predictions"] += report["outside_reference_predictions"]
-        counts["outside_reference_groups"] += report["outside_reference_groups"]
+        if group_outside:
+            counts["outside_reference_groups"] += report["outside_reference_groups"]
+        else:
+            counts["outside_reference_groups"] = None
         for threshold, hits in report["matched_reference_groups"].items():
             counts[f"reference_groups_found_{threshold}_A"] += hits
         for source, label in (("physical_pes_calls", "physical_pes_calls"),
@@ -120,13 +123,17 @@ def main(argv):
     parser.add_argument("--cache-dir", type=Path)
     parser.add_argument("--search-geometry-dir", type=Path, help="Use a local copy of the exact Search supplement")
     parser.add_argument("--workers", type=int, default=1, help="Score independent structures in parallel")
+    parser.add_argument("--recall-only", action="store_true", help="Skip grouping unmatched predictions")
     args = parser.parse_args(argv)
     if args.workers < 1:
         parser.error("--workers must be positive")
     start = perf_counter()
     dataset = UmaDataset(args.cache_dir)
     search = BenchmarkSearchFrames(args.cache_dir, directory=args.search_geometry_dir)
-    results = list(summarize(UmaScoring(dataset), load_attempts(dataset, args.attempts), search, args.workers))
+    results = list(summarize(
+        UmaScoring(dataset), load_attempts(dataset, args.attempts), search, args.workers,
+        group_outside=not args.recall_only,
+    ))
     with args.output.open("x", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(results[0]))
         writer.writeheader()

@@ -19,6 +19,7 @@ def main(argv):
     parser.add_argument("--output", type=Path)
     parser.add_argument("--cache-dir", type=Path)
     parser.add_argument("--confident-only", action="store_true")
+    parser.add_argument("--recall-only", action="store_true", help="Skip grouping unmatched predictions")
     args = parser.parse_args(argv)
     dataset = UmaDataset(args.cache_dir)
     if args.case_id not in dataset.cases:
@@ -31,7 +32,8 @@ def main(argv):
         parser.error(f"case {args.case_id} did not reach the published confidence threshold")
     scorers = scoring.structure(parent, [minimum_id])
     report = scorers[minimum_id].score(
-        geometry(atoms) for atoms in iread(args.submission, index=":")
+        (geometry(atoms, arrays=True) for atoms in iread(args.submission, index=":")),
+        group_outside=not args.recall_only,
     )
     matched = set(report["matched_saddle_ids"])
     pairs = defaultdict(list)

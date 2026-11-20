@@ -185,3 +185,36 @@ def test_staged_screen_checks_atoms_outside_its_first_pass():
     prediction.positions[5, 1] = 0.55
     prediction.positions[extra, 1] = 1e6
     assert not screening.possible(geometry(prediction), 0.2)[0]
+
+
+def test_priority_search_preserves_nearest_reference_and_ties():
+    from types import SimpleNamespace
+    from saddlebench.matching.matcher import PreparedReferenceMatcher
+
+    atoms = Atoms("H4", positions=[[1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0, 0]])
+    submission = {"geometry": geometry(atoms)}
+    records = []
+    for ident, distance in (("first", .18), ("tie-b", .04), ("tie-a", .04), ("last", .15)):
+        candidate = atoms.copy()
+        candidate.positions[-1, 0] = distance
+        records.append({"reference_id": ident, "identity_id": ident, "geometry": geometry(candidate)})
+    matcher = PreparedReferenceMatcher(SimpleNamespace(records=records, by_numbers=None))
+
+    expected = matcher.match(submission)["matches"][0]
+    matcher.prepared.clear()
+    ranked = zip([0., .02, .03, .10], records)
+    result = matcher.match(submission, ordered_bounds=ranked)["matches"][0]
+    assert result == expected
+    assert result["identity_id"] == "tie-a"
+    assert id(records[-1]["geometry"]) not in matcher.prepared
+
+
+def test_recall_only_retains_unmatched_frame_count(export):
+    path = export.parent / "predictions.traj"
+    output = export.parent / "recall.json"
+    assert main(["score", "--case-id", "case0001", "--submission", str(path),
+                 "--output", str(output), "--recall-only"]) == 0
+    result = json.loads(output.read_text())
+    assert result["recall"]["0.20"] == 1
+    assert result["outside_reference_predictions"] == 2
+    assert result["outside_reference_groups"] is None

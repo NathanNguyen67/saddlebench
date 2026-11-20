@@ -1,23 +1,22 @@
 """Score ASE saddle predictions against the published per-seed reference."""
 from collections import defaultdict
-from itertools import compress
 from types import SimpleNamespace
 
 import numpy as np
 
-from saddlebench.matching.geometry import BatchedAnchorFilter
+from saddlebench.matching.geometry import BatchedAnchorFilter, prepare_array_geometry
 from saddlebench.matching.matcher import PreparedReferenceMatcher
 
 THRESHOLDS = (0.20, 0.10, 0.05)
 GEOMETRY_COLUMNS = ["geometry_path", "geometry_index"]
 
 
-def geometry(atoms):
+def geometry(atoms, *, arrays=False):
     return {
         "numbers": atoms.numbers.tolist(),
         "pbc": atoms.pbc.tolist(),
-        "cell_angstrom": atoms.cell.array.tolist(),
-        "positions_angstrom": atoms.positions.tolist(),
+        "cell_angstrom": atoms.cell.array.copy() if arrays else atoms.cell.array.tolist(),
+        "positions_angstrom": atoms.get_positions() if arrays else atoms.positions.tolist(),
         "fixed_indices": [],
         "constraints_known": False,
     }
@@ -29,23 +28,31 @@ class SeedScorer:
             {"reference_id": ident, "identity_id": ident, "geometry": geom}
             for ident, geom in sorted(reference.items())
         ]
-        self.matcher = PreparedReferenceMatcher(SimpleNamespace(records=self.records, by_numbers=None))
+        self.matcher = PreparedReferenceMatcher(
+            SimpleNamespace(records=self.records, by_numbers=None), prepare=prepare_array_geometry,
+        )
         self.anchors = BatchedAnchorFilter(self.records, all_atoms=True)
 
     def nearest(self, prediction):
-        candidates = compress(self.records, self.anchors.possible(prediction, THRESHOLDS[0]))
-        matches = self.matcher.match({"geometry": prediction}, candidates=candidates)["matches"]
+        bounds = self.anchors.lower_bounds(prediction, THRESHOLDS[0])
+        candidates = np.flatnonzero(bounds <= THRESHOLDS[0])
+        ordered = candidates[np.argsort(bounds[candidates], kind="stable")]
+        matches = self.matcher.match(
+            {"geometry": prediction}, ordered_bounds=((bounds[i], self.records[i]) for i in ordered),
+        )["matches"]
         return matches[0] if matches else None
 
-    def score(self, predictions):
+    def score(self, predictions, *, group_outside=True):
         hits = {threshold: set() for threshold in THRESHOLDS}
         outside = []
-        count = 0
+        count = unmatched = 0
         for prediction in predictions:
             count += 1
             nearest = self.nearest(prediction)
             if nearest is None:
-                outside.append(prediction)
+                unmatched += 1
+                if group_outside:
+                    outside.append(prediction)
                 continue
             for threshold, groups in hits.items():
                 if nearest["maxdev_angstrom"] <= threshold:
@@ -58,8 +65,8 @@ class SeedScorer:
             "recall": {f"{t:.2f}": len(groups) / eligible if eligible else None
                        for t, groups in hits.items()},
             "matched_saddle_ids": sorted(hits[THRESHOLDS[0]]),
-            "outside_reference_predictions": len(outside),
-            "outside_reference_groups": distinct_outside(outside),
+            "outside_reference_predictions": unmatched,
+            "outside_reference_groups": distinct_outside(outside) if group_outside else None,
         }
 
 
@@ -70,7 +77,9 @@ def distinct_outside(predictions):
     records = [{"reference_id": i, "identity_id": i, "geometry": geom}
                for i, geom in enumerate(predictions)]
     anchors = BatchedAnchorFilter(records)
-    matcher = PreparedReferenceMatcher(SimpleNamespace(records=records, by_numbers=None))
+    matcher = PreparedReferenceMatcher(
+        SimpleNamespace(records=records, by_numbers=None), prepare=prepare_array_geometry,
+    )
     representatives = set()
     seen = set()
     for i, prediction in enumerate(predictions):
@@ -113,5 +122,5 @@ class UmaScoring:
             raise ValueError(f"Missing published reference geometry links for {sorted(missing)}")
         records = {mid: self.seeds[mid] for mid in seeds}
         records.update(saddles)
-        frames = {ident: geometry(atoms) for ident, atoms in self.dataset.frames(records)}
+        frames = {ident: geometry(atoms, arrays=True) for ident, atoms in self.dataset.frames(records)}
         return {mid: SeedScorer({sid: frames[sid] for sid in self.references[mid]}) for mid in seeds}
