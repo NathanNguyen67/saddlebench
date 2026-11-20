@@ -30,7 +30,10 @@ def export(tmp_path, monkeypatch, request):
     other = saddle.copy()
     other.info["saddlebench_id"] = "other"
     other.positions[0, 0] += 1.
-    write(shard, [seed, saddle, other])
+    product = saddle.copy()
+    product.info["saddlebench_id"] = "product"
+    product.positions[-1, 2] += .2
+    write(shard, [seed, saddle, other, product])
     write(tmp_path / "predictions.traj", [saddle, other, saddle, other])
     write(tmp_path / "predictions.extxyz", [saddle, other, saddle, other])
     locations = {"geometry_path": "geometries/structure0001.traj"}
@@ -47,6 +50,10 @@ def export(tmp_path, monkeypatch, request):
         "reference": [{**case, "saddle_id": sid, "barrier_eV": barrier}
                       for sid, barrier in [("saddle", .99), ("other", 1.0)]],
         "structures": [{"parent_id": "parent", "dataset": "lit_metal_surfaces"}],
+        "minima": [{**locations, "minimum_id": "product", "parent_id": "parent", "geometry_index": 3}],
+        "endpoint_pairs": [{"parent_id": "parent", "minimum_a": "seed", "minimum_b": "product",
+                            "saddle_id": "saddle", "n_complete": 1, "energy_a_eV": 0.,
+                            "energy_b_eV": -.2, "seed_barriers": [{"minimum_id": "seed"}]}],
     }
     for name, rows in tables.items():
         pq.write_table(pa.Table.from_pylist(rows), root / f"{name}.parquet")
@@ -87,6 +94,143 @@ def test_confidence_filter(export, capsys):
         main(["score", "--case-id", "case0001", "--submission", "unused.traj"])
     assert exc.value.code == 2
     assert "confidence threshold" in capsys.readouterr().err
+    assert main(["cases", "--all-seeds"]) == 0
+    assert "case0001,lit_oc20,parent,," in capsys.readouterr().out
+    output = export.parent / "below-confidence.json"
+    assert main(["score", "--case-id", "case0001", "--submission",
+                 str(export.parent / "predictions.traj"), "--include-unconfident",
+                 "--output", str(output)]) == 0
+    assert json.loads(output.read_text())["matched_reference_groups"]["0.20"] == 1
+    assert json.loads(output.read_text())["seed_confident"] is False
+
+
+def test_uma_html_scoreboard_uses_scores_and_full_catalog(export):
+    report = export.parent / "score.html"
+    predictions = export.parent / "predictions.traj"
+    assert main(["score", "--case-id", "case0001", "--submission", str(predictions),
+                 "--recall-only", "--html", str(report)]) == 0
+    page = report.read_text()
+    assert "1 of 1 published seeds" in page
+    assert '<option value="lit_oc20" selected>' in page
+    assert 'data-confidence="eligible"' in page
+    assert page.count("1/1 (100.0%)") == 3
+    assert 'id="results"' in page and 'id="seeds"' in page
+
+
+def test_uma_rate_coverage_and_equal_structure_average():
+    from math import exp
+
+    from ase.units import kB
+    from saddlebench.uma_metrics import rate_totals
+    from saddlebench.uma_scoreboard import coverage_values
+
+    reference = {"low": {"barrier_eV": .1}, "high": {"barrier_eV": .5}}
+    values = rate_totals(reference, {"0.20": ["low"], "0.10": ["high"], "0.05": []})
+    low = exp(-.1 / (423 * kB))
+    high = exp(-.5 / (423 * kB))
+    assert values["eligible_rate_weight"] == pytest.approx(low + high)
+    assert values["found_rate_weight_0.20_A"] == pytest.approx(low)
+    assert values["found_rate_weight_0.10_A"] == pytest.approx(high)
+    assert values["found_rate_weight_0.05_A"] == 0
+    rows = [
+        {"eligible_reference_groups": 1, "reference_groups_found_0.20_A": 1},
+        {"eligible_reference_groups": 9, "reference_groups_found_0.20_A": 0},
+    ]
+    assert coverage_values(rows, .20, rate=False) == (.5, .1)
+
+
+def test_uma_first_hit_clock_includes_failed_attempts_and_motif_time():
+    from saddlebench.uma_metrics import first_hit_events
+
+    attempts = [{"seq": i, "total_wall_s": time} for i, time in enumerate([2., 3., 5., 7.])]
+    matches = [{"identity_id": key, "maxdev_angstrom": dist} for key, dist in
+               [("a", .09), ("a", .04), ("b", .18)]]
+    reference = {key: {"barrier_eV": .2} for key in ("a", "b")}
+    total, trace = first_hit_events(attempts, attempts[1:3], matches, reference, proposal_time=11.)
+    assert total == 28
+    assert [(time, cutoff) for time, cutoff, _ in trace] == [(5, 0), (5, 1), (10, 2), (28, 0)]
+    assert first_hit_events(attempts, attempts[1:3], matches, reference) is None
+
+
+def test_published_motif_download_is_verified_and_reused(tmp_path, monkeypatch):
+    import gzip
+    from io import BytesIO
+
+    from saddlebench.reference import uma_motif
+
+    expected = b"SaddleMotif geometry bytes"
+    record = {"case_id": "case0001", "method_id": "sella", "sha256": hashlib.sha256(expected).hexdigest()}
+    calls = []
+
+    def open_test(url, timeout):
+        calls.append(url)
+        return BytesIO(gzip.compress(expected))
+
+    monkeypatch.setattr(uma_motif, "HF_HUB_OFFLINE", False)
+    monkeypatch.setattr(uma_motif, "urlopen", open_test)
+    for _ in range(2):
+        uma_motif.cache_proposals(record, revision="dummy", directory=tmp_path)
+    assert (tmp_path / "sella/case0001.traj").read_bytes() == expected
+    assert len(calls) == 1
+
+
+def test_baseline_selects_eligible_cases_before_loading_default_motif(export, monkeypatch):
+    from saddlebench import uma_baseline
+
+    output = export.parent / "baseline.csv"
+    proposal_dir = export.parent / "published"
+    proposal_dir.mkdir()
+
+    def default_motif(cache_dir, cases):
+        assert cases == {"case0001"}
+        return proposal_dir
+
+    def score(scoring, attempts, *args, motif_dir, **kwargs):
+        assert motif_dir == proposal_dir
+        return [{
+            "method_id": uma_baseline.METHODS[0], "geometry_source": "test",
+            "attempts": 1, "converged": 1, "predictions_scored": 1,
+            "converged_without_exported_geometry": 0,
+        }]
+
+    monkeypatch.setattr(uma_baseline, "default_motif_dir", default_motif)
+    monkeypatch.setattr(uma_baseline, "load_attempts", lambda *args: None)
+    monkeypatch.setattr(uma_baseline, "summarize", score)
+    assert main(["baseline", "--output", str(output)]) == 0
+    assert output.is_file()
+
+
+def test_uma_motif_bonus_and_missed_endpoint(export):
+    from ase.io import read
+    from saddlebench.scoring.uma import UmaScoring
+    from saddlebench.uma_baseline import METHODS, score_structure
+    from saddlebench.uma_missed import geometry_payload
+
+    scoring = UmaScoring(UmaDataset(export.parent / "cache"))
+    class Search:
+        def geometries(self, parent):
+            return {1: geometry(read(export.parent / "predictions.traj", index=1), arrays=True)}
+
+    method = METHODS[0]
+    proposals = export.parent / "proposals"
+    (proposals / method).mkdir(parents=True)
+    write(proposals / method / "case0001.traj", read(export.parent / "predictions.traj", index=0))
+    rows = score_structure(("parent", {("seed", method): [{
+        "seq": 1, "converged": True, "physical_pes_calls": 10, "total_wall_s": 1.,
+    }]}), scoring=scoring, search=Search(), archive=None, group_outside=False,
+        motif_dir=proposals, include_matches=True)
+    reports = {row["method_id"]: row for row in rows}
+    base, augmented = reports[method], reports["sella_motif_augmented"]
+    assert base["reference_groups_found_0.20_A"] == 0
+    assert augmented["reference_groups_found_0.20_A"] == 1
+    assert augmented["predictions_scored"] == 2
+    assert augmented["physical_pes_calls_per_reference_group_found"] is None
+    [(_, payload)] = geometry_payload(scoring, "parent", {"seed": {method: {"0.20": ["saddle"]}}})
+    missed = payload["saddles"]["saddle"]
+    assert missed["product"] == "product"
+    assert missed["barrier"] == .99
+    assert missed["productEnergy"] == -.2
+    assert missed["maxMove"] == .2
 
 
 def test_manifest_rejects_tampered_table(export):
@@ -275,13 +419,15 @@ def test_dataset_score_and_seed_download(export, capsys):
     folder = export.parent
     shutil.copyfile(folder / "predictions.traj", folder / "case0001.traj")
     output = folder / "scores.csv"
+    html = folder / "scores.html"
     assert main(["cases", "--dataset", "lit_oc20"]) == 0
     assert "case0001,lit_oc20,parent,1" in capsys.readouterr().out
     assert main(["cases", "--dataset", "all"]) == 0
     assert "case0001,lit_oc20,parent,1" in capsys.readouterr().out
     assert main(["score", "--dataset", "lit_oc20", "--submission-dir", str(folder),
-                 "--output", str(output), "--recall-only"]) == 0
+                 "--output", str(output), "--recall-only", "--html", str(html)]) == 0
     assert "case0001,lit_oc20,parent,4,1" in output.read_text()
+    assert html.read_text().count("1/1 (100.0%)") == 3
     assert main(["seed", "--dataset", "lit_oc20", "--output-dir", str(folder / "seeds")]) == 0
     assert read(folder / "seeds" / "case0001.traj").info["saddlebench_id"] == "seed"
 

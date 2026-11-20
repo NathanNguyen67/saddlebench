@@ -39,7 +39,7 @@ def main(argv=None):
     if not args or args[0] in ('-h','--help'):
         print('usage: saddlebench {score|cases|seed|baseline|coverage-score|provisional-score|legacy-score|render} [options]')
         print('  score               DEFAULT: public UMA per-seed recall at 0.20/0.10/0.05 A')
-        print('  cases               List confident UMA seeds by dataset')
+        print('  cases               List confident UMA seeds by dataset (or use --all-seeds)')
         print('  seed                Download ASE starting minima')
         print('  baseline            Reproduce the public UMA benchmark')
         print('  coverage-score      Archived HF coverage leaderboard')

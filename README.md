@@ -14,9 +14,10 @@ python -m pip install "numpy==1.26.4" "scipy==1.13.1" "pyarrow==21.0.0" \
 export OPENBLAS_NUM_THREADS=1
 export HF_HUB_DISABLE_XET=1
 
-saddlebench score --case-id case0046 --submission benchmarks/uma/quick.traj --recall-only
+saddlebench score --case-id case0046 --submission benchmarks/uma/quick.traj \
+  --recall-only --html quick.html
 saddlebench baseline --dataset literature --attempts benchmarks/uma/attempts.parquet \
-  --recall-only --workers 4 --output baseline.csv
+  --recall-only --workers 4 --output baseline.csv --html baseline.html
 ```
 
 The quick example should score four frames, find one of one eligible reference group at all three cutoffs, and report two unmatched frames. The public baseline should report **28,000 attempts**, **26,284 converged**, and **22,880 geometries scored** using the public group representatives. It uses the 28 confident seeds in the historical 36-seed prefilled cohort. [Baseline results](benchmarks/uma/SUMMARY.md)
@@ -25,12 +26,13 @@ The quick example should score four frames, find one of one eligible reference g
 
 ```sh
 saddlebench cases
+saddlebench cases --all-seeds
 saddlebench cases --dataset lit_oc20
 saddlebench seed --dataset lit_oc20 --output-dir seeds
 saddlebench seed --case-id case0046 --output case0046.traj
 ```
 
-`cases` prints one row per confident seed, with its dataset, parent structure, eligible reference count, and which tail criteria it passed. `seed --dataset` writes one ASE trajectory per listed case. A single published starting minimum is available by case ID, including cases outside the confident benchmark. The trajectory retains the exported cell, atom order, and attached ASE constraints.
+`cases` prints one row per confident seed, with its dataset, parent structure, eligible reference count, and which tail criteria it passed. Add `--all-seeds` to include seeds below threshold. Their confidence and eligible group fields are blank. `seed --dataset` writes one ASE trajectory per confident case. A single published starting minimum is available by case ID, including cases outside the confident benchmark. The trajectory retains the exported cell, atom order, and attached ASE constraints.
 
 | Dataset | Structures |
 | --- | --- |
@@ -46,14 +48,20 @@ Al and Pt belong to `lit_oc20`. Pt qualifies through its actual tail of 1,083 re
 
 ## Score your own predictions
 
-Use one predicted saddle per frame in ASE `.traj` or extended XYZ, with the starting minimum’s atom order, simulation cell, and periodic boundary conditions. For one case, the scorer reports JSON. For a dataset, name each file `CASE_ID.traj` or `CASE_ID.extxyz` and provide one file per confident case. The output is a CSV with one row per case.
+1. Pick a confident case from `saddlebench cases` and download its starting structure with `saddlebench seed --case-id CASE_ID --output seed.traj`.
+2. Run your saddle search with that seed and save one predicted saddle per frame in ASE `.traj` or extended XYZ. Preserve the starting minimum’s atom order, cell, and periodic boundary conditions.
+3. Run `saddlebench score` on your file. For a whole dataset, place exactly one `CASE_ID.traj` or `CASE_ID.extxyz` per confident case into a directory. One-case results are JSON and dataset results are CSV.
 
 ```sh
 saddlebench score --case-id case0046 --submission my-predictions.traj \
-  --recall-only --output my-score.json
+  --recall-only --output my-score.json --html my-score.html
 saddlebench score --dataset lit_oc20 --submission-dir predictions \
-  --recall-only --output my-dataset.csv
+  --recall-only --output my-dataset.csv --html my-dataset.html
 ```
+
+Open the HTML in a browser. Its dataset selector filters both results and the catalog of all published seeds. The seed filter shows eligible and below-threshold cases. The results table contains the cases or baseline methods scored by the command that made the report. To populate results across all datasets with your own predictions, use `score --dataset all` with a file for every confident case. Add `--include-unconfident` to `score` or `baseline` to include published seeds below the threshold. A dataset submission then needs one file for every selected seed. Use the same flag with `seed --dataset` to download those starting minima. Predictions are scored locally.
+
+The HTML links to one companion `*-missed.html` for all scored cases. Open it offline to filter missed reference groups by dataset, case, method and cutoff, inspect their barriers and displacements, and scrub through the starting minimum, saddle and a seed-connected product. Keep the two HTML files together. The geometry interpolation joins saved frames and does not represent a calculated reaction path.
 
 For one case, `--elapsed-seconds` and `--physical-pes-calls` record optional search costs. `--recall-only` reports all unmatched frames and skips their distinct-group count. Omit it to group unmatched frames against earlier unmatched representatives in submission order. Unmatched frames can include predictions corresponding to excluded aligned slides.
 
@@ -71,6 +79,10 @@ The bundled [attempt table](benchmarks/uma/attempts.parquet) preserves all 36,00
 
 `baseline --dataset lit_bulk` (or another `lit_*` dataset) scores only its confident seeds with prefilled attempts. Other datasets can be scored using your own trajectories through `score --dataset`.
 
+The baseline HTML opens on overall method results, with per-structure rows in a dropdown. Each eligible reference group has rate weight `exp(-barrier_eV / (k_B * 423 K))`, using a common prefactor. Rate coverage is the weight of matched groups divided by the weight of eligible groups. Unweighted coverage uses counts. At each of 0.20, 0.10 and 0.05 Å, the reported **equal-structure** value averages the per-structure fractions and the **pooled** value divides the sums of the numerators and denominators. Structures with zero denominator do not enter the average. Predictions compared includes matching and nonmatching predictions.
+
+The coverage-versus-time plot places each first hit at its cumulative reported attempt time in sequence order. This is serial-equivalent search work, including unsuccessful attempts, and differs from parallel wall-clock elapsed time. SaddleMotif proposals are added as a single batch at the end of generation. Generation costs come from the runner's measured interval, or the start/end file timestamps for earlier runs. Unavailable time displays as N/A. The CSV retains reported PES costs, with a blank cost per hit when unavailable.
+
 The public run uses the exported saddle-group representatives. For the 3,404 converged attempts on confident seeds with no public representative, the CSV records the geometry as unavailable while retaining the attempt in convergence, PES calls, and search time. If you have the exact Search benchmark trajectory ZIP, the same command can use it directly:
 
 ```sh
@@ -80,6 +92,22 @@ saddlebench baseline --dataset literature --attempts benchmarks/uma/attempts.par
 ```
 
 The ZIP has one trajectory per case and method, ordered by converged attempt sequence. The exact run scores all 26,284 converged predictions on confident seeds. The two geometry sources can produce different recall and are labeled in the CSV. Both preserve all 28,000 qualifying attempts for convergence and cost accounting. Search wall time is summed in seconds and printed separately from scorer runtime.
+
+The public baseline automatically fetches and caches the published SaddleMotif proposal files for its selected cases and scores four methods. Use `--no-motif` to compare the two original methods only. Use `--motif-dir proposals` to override the published proposals. A local override contains the generated ASE trajectory at `proposals/METHOD_ID/CASE_ID.traj`, using the original method IDs `sella_prfo_diag4_abs01` and `tsbfgs_dimer_rot4_frot01_r23_allprobes`. The CLI also discovers local proposals in `benchmarks/uma/motif`, or in `motif` beside a supplied `--attempts` file. The corresponding augmented row scores the original method's predictions plus every proposal in that file. Proposal geometry matches measure recall of the supplied guesses. An optimizer would be needed to establish which guesses converge to saddles. The report gives coverage only for the cases with supplied proposals, so compare methods on the same structures.
+
+With the exact Search ZIP and a compatible SaddleMotif source tree and environment, generate the inputs with:
+
+```sh
+python scripts/generate_uma_motif.py --saddlemotif /path/to/SaddleMotif \
+  --geometry-zip saddlebench_uma_benchmark_trajectories.zip \
+  --attempts benchmarks/uma/attempts.parquet --output-dir proposals --workers 4
+saddlebench baseline --geometry-zip saddlebench_uma_benchmark_trajectories.zip \
+  --motif-dir proposals --recall-only --workers 4 --output motif.csv --html motif.html
+```
+
+Generation uses a separate library for each method and seed, built from the first exact converged frame in each Search saddle group from the 500 attempts. Any converged frame without a group ID is used individually. The library is placed on its own starting seed. The generator keeps every proposal in SaddleMotif's collated output and skips the starting-minimum frame. Pass `--include-unconfident` to both commands to generate and compare the full prefilled cohort.
+
+Keep the proposal directory to reuse it without generating again. A compact cache can retain just the two method directories, `timings.json` if available, and the matching exact Search archive saved as `exact-search.zip`. When the cache is supplied with `--motif-dir`, the CLI discovers that archive automatically. Resume generation into an existing output directory only if the source version and input files are unchanged.
 
 These attempts helped build the answer key, so their recall can be optimistic for an independently evaluated method. [Pinned UMA dataset](https://huggingface.co/datasets/traingletrain/saddlebench-uma/tree/acdac15b98282a9137a76c060913fcc0ce08462b)
 

@@ -52,13 +52,15 @@ class SeedScorer:
         )["matches"]
         return matches[0] if matches else None
 
-    def score(self, predictions, *, group_outside=True):
+    def score(self, predictions, *, group_outside=True, on_prediction=None):
         hits = {threshold: set() for threshold in THRESHOLDS}
         outside = []
         count = unmatched = 0
         for prediction in predictions:
             count += 1
             nearest = self.nearest(prediction)
+            if on_prediction is not None:
+                on_prediction(nearest)
             if nearest is None:
                 unmatched += 1
                 if group_outside:
@@ -75,6 +77,9 @@ class SeedScorer:
             "recall": {f"{t:.2f}": len(groups) / eligible if eligible else None
                        for t, groups in hits.items()},
             "matched_saddle_ids": sorted(hits[THRESHOLDS[0]]),
+            "matched_saddle_ids_by_threshold": {
+                f"{t:.2f}": sorted(groups) for t, groups in hits.items()
+            },
             "outside_reference_predictions": unmatched,
             "outside_reference_groups": distinct_outside(outside) if group_outside else None,
         }
@@ -117,8 +122,9 @@ def dataset_label(parent_id, source):
 
 
 class UmaScoring:
-    def __init__(self, dataset):
+    def __init__(self, dataset, *, include_unconfident=False):
         self.dataset = dataset
+        self.include_unconfident = include_unconfident
         overlay = files("saddlebench.reference").joinpath("uma_aligned.csv").read_text()
         self.revision_digest = sha256(
             (json.dumps(dataset.manifest, sort_keys=True) + overlay).encode()
@@ -133,7 +139,7 @@ class UmaScoring:
         aligned = {(row["minimum_id"], row["saddle_id"]) for row in csv.DictReader(overlay.splitlines())}
         for row in dataset.table("reference").to_pylist():
             mid, sid = row["minimum_id"], row["saddle_id"]
-            if confidence_sources(self.seeds[mid]) and row["barrier_eV"] < 1.0:
+            if (include_unconfident or confidence_sources(self.seeds[mid])) and row["barrier_eV"] < 1.0:
                 if (mid, sid) in aligned:
                     self.aligned_counts[mid] += 1
                 else:

@@ -10,9 +10,11 @@ from saddlebench.reference.uma import UmaDataset, confidence_sources
 from saddlebench.scoring.uma import UmaScoring
 
 
-def select_cases(scoring, dataset=None):
+def select_cases(scoring, dataset=None, *, confident_only=None):
+    if confident_only is None:
+        confident_only = not scoring.include_unconfident
     return [seed for seed in sorted(scoring.seeds.values(), key=lambda seed: seed["case_id"])
-            if confidence_sources(seed) and (
+            if (not confident_only or confidence_sources(seed)) and (
                 dataset in (None, "all") or scoring.datasets[seed["parent_id"]] == dataset
                 or dataset == "literature" and scoring.datasets[seed["parent_id"]].startswith("lit_")
             )]
@@ -33,15 +35,18 @@ def check_dataset(parser, scoring, label):
 def main_cases(argv):
     parser = argparse.ArgumentParser(prog="saddlebench cases")
     add_dataset_argument(parser)
+    parser.add_argument("--all-seeds", action="store_true", help="Include seeds below the confidence threshold")
     parser.add_argument("--cache-dir", type=Path)
     args = parser.parse_args(argv)
     scoring = UmaScoring(UmaDataset(args.cache_dir))
     check_dataset(parser, scoring, args.dataset)
     writer = csv.writer(sys.stdout, lineterminator="\n")
     writer.writerow(("case_id", "dataset", "parent_id", "eligible_reference_groups", "confidence_sources"))
-    for seed in select_cases(scoring, args.dataset):
+    for seed in select_cases(scoring, args.dataset, confident_only=not args.all_seeds):
+        sources = confidence_sources(seed)
         writer.writerow((seed["case_id"], scoring.datasets[seed["parent_id"]], seed["parent_id"],
-                         len(scoring.references[seed["minimum_id"]]), "+".join(confidence_sources(seed))))
+                         len(scoring.references[seed["minimum_id"]]) if sources else None,
+                         "+".join(sources)))
     return 0
 
 
@@ -54,6 +59,8 @@ def main_seed(argv):
     output.add_argument("--output", type=Path, help="Single ASE .traj for --case-id")
     output.add_argument("--output-dir", type=Path, help="One ASE .traj per confident case for --dataset")
     parser.add_argument("--cache-dir", type=Path)
+    parser.add_argument("--include-unconfident", action="store_true",
+                        help="Include published seeds below confidence with --dataset")
     args = parser.parse_args(argv)
     if bool(args.case_id) != bool(args.output):
         parser.error("use --case-id with --output or --dataset with --output-dir")
@@ -65,7 +72,7 @@ def main_seed(argv):
         # CSV frame pointers are strings.
         records[0] = {**records[0], "geometry_index": int(records[0]["geometry_index"])}
     else:
-        scoring = UmaScoring(dataset)
+        scoring = UmaScoring(dataset, include_unconfident=args.include_unconfident)
         check_dataset(parser, scoring, args.dataset)
         records = select_cases(scoring, args.dataset)
         args.output_dir.mkdir(parents=True, exist_ok=True)
