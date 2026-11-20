@@ -15,7 +15,9 @@ from saddlebench.scoring.uma import SeedScorer, geometry
 
 @pytest.fixture
 def export(tmp_path, monkeypatch, request):
-    confident = getattr(request, 'param', True)
+    mode = getattr(request, 'param', True)
+    confident = mode is True
+    actual_tail = 200 if mode == 'actual' else 0
     root = tmp_path / "export"
     root.mkdir()
     shard = root / "geometries" / "structure0001.traj"
@@ -38,7 +40,8 @@ def export(tmp_path, monkeypatch, request):
         f"case0001,seed,parent,{confident},geometries/structure0001.traj,0\n"
     )
     tables = {
-        "seeds": [{**case, **locations, "geometry_index": 0, "confident": confident}],
+        "seeds": [{**case, **locations, "geometry_index": 0, "confident": confident,
+                   "actual_random_tail": actual_tail}],
         "saddles": [{**locations, "parent_id": "parent", "saddle_id": sid, "geometry_index": i}
                     for i, sid in [(1, "saddle"), (2, "other")]],
         "reference": [{**case, "saddle_id": sid, "barrier_eV": barrier}
@@ -298,3 +301,16 @@ def test_al_and_pt_are_in_lit_oc20():
     assert dataset_label("oc20:al_385", "oc20") == "lit_oc20"
     assert dataset_label("oc20:pt_343", "oc20") == "lit_oc20"
     assert dataset_label("oc20:1234", "oc20") == "oc20"
+
+
+
+@pytest.mark.parametrize("export", ["actual"], indirect=True)
+def test_actual_tail_alone_admits_a_seed(export, capsys):
+    assert main(["cases", "--dataset", "lit_oc20"]) == 0
+    assert "case0001,lit_oc20,parent,1,actual" in capsys.readouterr().out
+    output = export.parent / "actual-score.json"
+    assert main(["score", "--case-id", "case0001", "--submission", str(export.parent / "predictions.traj"),
+                 "--output", str(output), "--recall-only"]) == 0
+    result = json.loads(output.read_text())
+    assert result["confidence_sources"] == ["actual"]
+    assert result["eligible_reference_groups"] == 1

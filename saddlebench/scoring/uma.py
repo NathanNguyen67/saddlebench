@@ -13,6 +13,7 @@ from saddlebench.matching.matcher import PreparedReferenceMatcher
 from saddlebench.matching.profile_index import FIELDS, ProfileIndex
 from saddlebench.reference import array_cache
 from saddlebench.reference.array_cache import geometry
+from saddlebench.reference.uma import confidence_sources
 
 THRESHOLDS = (0.20, 0.10, 0.05)
 GEOMETRY_COLUMNS = ["geometry_path", "geometry_index"]
@@ -132,7 +133,7 @@ class UmaScoring:
         aligned = {(row["minimum_id"], row["saddle_id"]) for row in csv.DictReader(overlay.splitlines())}
         for row in dataset.table("reference").to_pylist():
             mid, sid = row["minimum_id"], row["saddle_id"]
-            if self.seeds[mid]["confident"] and row["barrier_eV"] < 1.0:
+            if confidence_sources(self.seeds[mid]) and row["barrier_eV"] < 1.0:
                 if (mid, sid) in aligned:
                     self.aligned_counts[mid] += 1
                 else:

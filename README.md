@@ -1,6 +1,6 @@
 # SaddleBench UMA
 
-Score saddle-search trajectories against a published answer key on CPU with ASE, NumPy and PyArrow. The benchmark includes only seeds that reached the published confidence threshold. It uses saddle geometries to match predictions and excludes aligned-slide reference groups.
+Score saddle-search trajectories against a published answer key on CPU with ASE, NumPy and PyArrow. A seed is eligible if either its actual repeat tail or its shuffled mean tail reaches 200. It uses saddle geometries to match predictions and excludes aligned-slide reference groups.
 
 ## Install and run
 
@@ -19,7 +19,7 @@ saddlebench baseline --dataset literature --attempts benchmarks/uma/attempts.par
   --recall-only --workers 4 --output baseline.csv
 ```
 
-The quick example should score four frames, find one of one eligible reference group at all three cutoffs, and report two unmatched frames. The public baseline should report **20,000 attempts**, **19,035 converged**, and **16,686 geometries scored** using the public group representatives. It uses the 20 confident seeds in the historical 36-seed prefilled cohort. [Baseline results](benchmarks/uma/SUMMARY.md)
+The quick example should score four frames, find one of one eligible reference group at all three cutoffs, and report two unmatched frames. The public baseline should report **28,000 attempts**, **26,284 converged**, and **22,880 geometries scored** using the public group representatives. It uses the 28 confident seeds in the historical 36-seed prefilled cohort. [Baseline results](benchmarks/uma/SUMMARY.md)
 
 ## Choose a dataset and download seeds
 
@@ -30,7 +30,7 @@ saddlebench seed --dataset lit_oc20 --output-dir seeds
 saddlebench seed --case-id case0046 --output case0046.traj
 ```
 
-`cases` prints one row per confident seed, with its dataset, parent structure, and eligible reference count. `seed --dataset` writes one ASE trajectory per listed case. A single published starting minimum is available by case ID, including cases outside the confident benchmark. The trajectory retains the exported cell, atom order, and attached ASE constraints.
+`cases` prints one row per confident seed, with its dataset, parent structure, eligible reference count, and which tail criteria it passed. `seed --dataset` writes one ASE trajectory per listed case. A single published starting minimum is available by case ID, including cases outside the confident benchmark. The trajectory retains the exported cell, atom order, and attached ASE constraints.
 
 | Dataset | Structures |
 | --- | --- |
@@ -40,9 +40,9 @@ saddlebench seed --case-id case0046 --output case0046.traj
 | `oc20`, `oc22` | Confident cases from those datasets |
 | `lemat`, `mp20bat` | Confident cases from those bulk datasets |
 | `literature` | All four `lit_*` datasets together |
-| `all` | All 70 confident seeds across the datasets |
+| `all` | All 125 confident seeds across the datasets |
 
-Al and Pt belong to `lit_oc20`. Both are below the confidence threshold in this release, so their prefilled attempts are available in the full attempt table and omitted from benchmark scoring.
+Al and Pt belong to `lit_oc20`. Pt qualifies through its actual tail of 1,083 repeats. Al falls below both thresholds, so its prefilled attempts remain available in the full attempt table and are omitted from benchmark scoring.
 
 ## Score your own predictions
 
@@ -61,9 +61,9 @@ Each prediction is assigned to the closest eligible saddle group with **core-dri
 
 ### Benchmark reference
 
-The pinned dataset supplies confidence flags and eligible saddle groups. Eligibility requires a seed-connected pair with complete DoubleMin, distinct endpoints and a representative barrier strictly below 1.0 eV. The scorer uses geometry for identity. Endpoint energies and the choice between multiple product minima play no role in matching or credit.
+The pinned dataset supplies the actual repeat tail in scheduling order and the confidence flag for the mean of 400 shuffled tails. SaddleBench accepts either criterion and reports which passed. The dataset also supplies the eligible saddle groups. Eligibility requires a seed-connected pair with complete DoubleMin, distinct endpoints and a representative barrier strictly below 1.0 eV. The scorer uses geometry for identity. Endpoint energies and the choice between multiple product minima play no role in matching or credit.
 
-An aligned slide contains at least six free atoms in a moving component. Following SaddleMotif Explorer v2, moved atoms displace more than 0.5 Å after periodic alignment and drift removal. Edges join moved atoms initially closer than 3.3 Å whose pairwise distance changes by less than 0.15 Å. The directions within the group must have a resultant of at least 0.9. A reference saddle is excluded if **all** its eligible seed-connected endpoint pairs give an aligned slide. The filter uses the public canonical endpoints and excludes 65 of 2,021 confident reference groups. [SaddleMotif rule](https://github.com/NathanNguyen67/SaddleMotif/blob/93c30fa/explorer_v2/build/motion.py)
+An aligned slide contains at least six free atoms in a moving component. Following SaddleMotif Explorer v2, moved atoms displace more than 0.5 Å after periodic alignment and drift removal. Edges join moved atoms initially closer than 3.3 Å whose pairwise distance changes by less than 0.15 Å. The directions within the group must have a resultant of at least 0.9. A reference saddle is excluded if **all** its eligible seed-connected endpoint pairs give an aligned slide. The filter uses the public canonical endpoints and excludes 194 of 4,908 confident reference groups. [SaddleMotif rule](https://github.com/NathanNguyen67/SaddleMotif/blob/93c30fa/explorer_v2/build/motion.py)
 
 ## Prefilled benchmark inputs
 
@@ -71,7 +71,7 @@ The bundled [attempt table](benchmarks/uma/attempts.parquet) preserves all 36,00
 
 `baseline --dataset lit_bulk` (or another `lit_*` dataset) scores only its confident seeds with prefilled attempts. Other datasets can be scored using your own trajectories through `score --dataset`.
 
-The public run uses the exported saddle-group representatives. For the 2,349 converged attempts on confident seeds with no public representative, the CSV records the geometry as unavailable while retaining the attempt in convergence, PES calls, and search time. If you have the exact Search benchmark trajectory ZIP, the same command can use it directly:
+The public run uses the exported saddle-group representatives. For the 3,404 converged attempts on confident seeds with no public representative, the CSV records the geometry as unavailable while retaining the attempt in convergence, PES calls, and search time. If you have the exact Search benchmark trajectory ZIP, the same command can use it directly:
 
 ```sh
 saddlebench baseline --dataset literature --attempts benchmarks/uma/attempts.parquet \
@@ -79,13 +79,13 @@ saddlebench baseline --dataset literature --attempts benchmarks/uma/attempts.par
   --workers 4 --output baseline-exact.csv
 ```
 
-The ZIP has one trajectory per case and method, ordered by converged attempt sequence. The exact run scores all 19,035 converged predictions on confident seeds. The two geometry sources can produce different recall and are labeled in the CSV. Both preserve all 20,000 qualifying attempts for convergence and cost accounting. Search wall time is summed in seconds and printed separately from scorer runtime.
+The ZIP has one trajectory per case and method, ordered by converged attempt sequence. The exact run scores all 26,284 converged predictions on confident seeds. The two geometry sources can produce different recall and are labeled in the CSV. Both preserve all 28,000 qualifying attempts for convergence and cost accounting. Search wall time is summed in seconds and printed separately from scorer runtime.
 
 These attempts helped build the answer key, so their recall can be optimistic for an independently evaluated method. [Pinned UMA dataset](https://huggingface.co/datasets/traingletrain/saddlebench-uma/tree/acdac15b98282a9137a76c060913fcc0ce08462b)
 
 ## Cache and reference limitations
 
-SaddleBench downloads only the structure trajectories used by the command and verifies source data against the pinned manifest. It caches decoded references and indexes in `saddlebench-uma-arrays` in the Hugging Face Hub cache. Use `--cache-dir` to choose a local directory. The documented public literature run used about 330 MiB of cache space. Scoring other datasets adds their structure shards as needed. Keep `OPENBLAS_NUM_THREADS=1` when using multiple workers.
+SaddleBench downloads only the structure trajectories used by the command and verifies source data against the pinned manifest. It caches decoded references and indexes in `saddlebench-uma-arrays` in the Hugging Face Hub cache. Use `--cache-dir` to choose a local directory. Scoring other datasets adds their structure shards to the cache as needed. Keep `OPENBLAS_NUM_THREADS=1` when using multiple workers.
 
 Campaign DoubleMin endpoints are unverified. At the production 0.25 Å push, LBFGS sometimes stopped at a neighboring first-order saddle. Near-degenerate or symmetry-equivalent minima can also have different identities, so a saddle can connect to a nearby minimum and remain outside the published seed-specific reference.
 

@@ -15,6 +15,15 @@ from saddlebench.reference import array_cache
 
 REPO = "traingletrain/saddlebench-uma"
 REVISION = "acdac15b98282a9137a76c060913fcc0ce08462b"
+CONFIDENCE_TAIL = 200
+
+
+def confidence_sources(seed):
+    """Benchmark confidence accepts either published tail criterion."""
+    return tuple(name for name, passed in (
+        ("actual", (seed.get("actual_random_tail") or 0) >= CONFIDENCE_TAIL),
+        ("shuffled", seed["confident"]),
+    ) if passed)
 
 
 class UmaDataset:

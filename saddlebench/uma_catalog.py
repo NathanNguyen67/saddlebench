@@ -6,13 +6,13 @@ import sys
 
 from ase.io import write
 
-from saddlebench.reference.uma import UmaDataset
+from saddlebench.reference.uma import UmaDataset, confidence_sources
 from saddlebench.scoring.uma import UmaScoring
 
 
 def select_cases(scoring, dataset=None):
     return [seed for seed in sorted(scoring.seeds.values(), key=lambda seed: seed["case_id"])
-            if seed["confident"] and (
+            if confidence_sources(seed) and (
                 dataset in (None, "all") or scoring.datasets[seed["parent_id"]] == dataset
                 or dataset == "literature" and scoring.datasets[seed["parent_id"]].startswith("lit_")
             )]
@@ -38,10 +38,10 @@ def main_cases(argv):
     scoring = UmaScoring(UmaDataset(args.cache_dir))
     check_dataset(parser, scoring, args.dataset)
     writer = csv.writer(sys.stdout, lineterminator="\n")
-    writer.writerow(("case_id", "dataset", "parent_id", "eligible_reference_groups"))
+    writer.writerow(("case_id", "dataset", "parent_id", "eligible_reference_groups", "confidence_sources"))
     for seed in select_cases(scoring, args.dataset):
         writer.writerow((seed["case_id"], scoring.datasets[seed["parent_id"]], seed["parent_id"],
-                         len(scoring.references[seed["minimum_id"]])))
+                         len(scoring.references[seed["minimum_id"]]), "+".join(confidence_sources(seed))))
     return 0
 
 

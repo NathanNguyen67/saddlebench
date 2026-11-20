@@ -10,6 +10,8 @@ from ase.io.trajectory import Trajectory
 import numpy as np
 import pyarrow.parquet as pq
 
+from saddlebench.reference.uma import confidence_sources
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -25,7 +27,7 @@ def main():
         with (args.export / f"{table}.parquet").open("rb") as handle:
             return pq.read_table(handle, columns=columns).to_pylist()
 
-    seeds = {r["minimum_id"]: r for r in rows("seeds") if r["confident"]}
+    seeds = {r["minimum_id"]: r for r in rows("seeds") if confidence_sources(r)}
     references = {(r["minimum_id"], r["saddle_id"]) for r in rows("reference")
                   if r["minimum_id"] in seeds and r["barrier_eV"] < 1.0}
     products = defaultdict(set)

@@ -7,7 +7,7 @@ import sys
 
 from ase.io import iread
 
-from saddlebench.reference.uma import REVISION, UmaDataset
+from saddlebench.reference.uma import REVISION, UmaDataset, confidence_sources
 from saddlebench.scoring.uma import UmaScoring, geometry
 from saddlebench.uma_catalog import add_dataset_argument, check_dataset, select_cases
 
@@ -21,7 +21,7 @@ def score_case(scoring, seed, scorer, path, *, group_outside):
     report.update(
         hf_revision=REVISION, case_id=seed["case_id"], minimum_id=mid, parent_id=parent,
         dataset=scoring.datasets[parent], seed_confident=True,
-        excluded_aligned_groups=scoring.aligned_counts[mid],
+        excluded_aligned_groups=scoring.aligned_counts[mid], confidence_sources=confidence_sources(seed),
     )
     return report
 
@@ -53,6 +53,7 @@ def score_dataset(parser, scoring, args):
             for threshold, count in report["matched_reference_groups"].items():
                 row[f"reference_groups_found_{threshold}_A"] = count
                 row[f"recall_{threshold}_A"] = report["recall"][threshold]
+            row["confidence_sources"] = "+".join(report["confidence_sources"])
             rows.append(row)
     if not rows:
         parser.error(f"no confident seeds in {args.dataset}")
@@ -94,8 +95,8 @@ def main(argv):
     case = dataset.cases[args.case_id]
     mid, parent = case["minimum_id"], case["parent_id"]
     seed = scoring.seeds[mid]
-    if not seed["confident"]:
-        parser.error(f"case {args.case_id} did not reach the published confidence threshold")
+    if not confidence_sources(seed):
+        parser.error(f"case {args.case_id} did not reach the confidence threshold on either tail")
     scorer = scoring.structure(parent, [mid])[mid]
     report = score_case(scoring, seed, scorer, args.submission, group_outside=not args.recall_only)
     report.update(reported_search_wall_s=args.elapsed_seconds, physical_pes_calls=args.physical_pes_calls)

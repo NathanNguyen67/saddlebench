@@ -3,6 +3,12 @@ lit_battery,lit_battery:B02,sella_prfo_diag4_abs01,public_group_representative,1
 lit_battery,lit_battery:B02,tsbfgs_dimer_rot4_frot01_r23_allprobes,public_group_representative,1,500,494,278,36,0,48,,36,36,36,155466,0,7546.187119748004,0,0.988,216,1.0,4318.5
 lit_battery,lit_battery:B03,sella_prfo_diag4_abs01,public_group_representative,1,500,486,469,35,0,230,,29,25,25,79450,0,1816.8254462980017,0,0.972,17,0.8285714285714286,2739.655172413793
 lit_battery,lit_battery:B03,tsbfgs_dimer_rot4_frot01_r23_allprobes,public_group_representative,1,500,488,453,35,0,217,,25,20,20,159268,0,4157.853089826999,0,0.976,35,0.7142857142857143,6370.72
+lit_battery,lit_battery:B04,sella_prfo_diag4_abs01,public_group_representative,1,500,483,391,129,0,55,,23,23,23,134089,0,9780.629457202996,0,0.966,92,0.17829457364341086,5829.95652173913
+lit_battery,lit_battery:B04,tsbfgs_dimer_rot4_frot01_r23_allprobes,public_group_representative,1,500,489,433,129,0,54,,23,23,23,204926,0,11553.321922673003,0,0.978,56,0.17829457364341086,8909.826086956522
+lit_battery,lit_battery:B05,sella_prfo_diag4_abs01,public_group_representative,1,500,471,467,47,0,177,,19,19,19,125630,0,8676.167264016,0,0.942,4,0.40425531914893614,6612.105263157895
+lit_battery,lit_battery:B05,tsbfgs_dimer_rot4_frot01_r23_allprobes,public_group_representative,1,500,493,491,47,0,98,,24,24,24,144450,0,7982.9063954019975,0,0.986,2,0.5106382978723404,6018.75
+lit_battery,lit_battery:B08,sella_prfo_diag4_abs01,public_group_representative,1,500,456,437,56,0,83,,27,27,27,161816,0,6229.175111398999,0,0.912,19,0.48214285714285715,5993.185185185185
+lit_battery,lit_battery:B08,tsbfgs_dimer_rot4_frot01_r23_allprobes,public_group_representative,1,500,493,473,56,0,153,,29,29,29,274967,0,10551.664875347988,0,0.986,20,0.5178571428571429,9481.620689655172
 lit_bulk,lit_bulk:L01_I_Si65_2x2x2_v20261115,sella_prfo_diag4_abs01,public_group_representative,1,500,494,436,4,0,214,,4,4,4,85387,0,2073.443421899998,0,0.988,58,1.0,21346.75
 lit_bulk,lit_bulk:L01_I_Si65_2x2x2_v20261115,tsbfgs_dimer_rot4_frot01_r23_allprobes,public_group_representative,1,500,495,394,4,0,113,,4,4,4,99411,0,2688.799021702996,0,0.99,101,1.0,24852.75
 lit_bulk,lit_bulk:L01_V_Si215_3x3x3_v20261115,sella_prfo_diag4_abs01,public_group_representative,1,500,487,444,4,0,25,,4,4,4,109897,0,7189.279611127,0,0.974,43,1.0,27474.25
@@ -19,6 +25,8 @@ lit_bulk,lit_bulk:L06,sella_prfo_diag4_abs01,public_group_representative,1,500,5
 lit_bulk,lit_bulk:L06,tsbfgs_dimer_rot4_frot01_r23_allprobes,public_group_representative,1,500,500,500,6,0,106,,6,6,6,58322,0,1600.217990925,0,1.0,0,1.0,9720.333333333334
 lit_bulk,lit_bulk:L07,sella_prfo_diag4_abs01,public_group_representative,1,500,500,500,8,0,129,,6,6,6,57476,0,1175.250075747,0,1.0,0,0.75,9579.333333333334
 lit_bulk,lit_bulk:L07,tsbfgs_dimer_rot4_frot01_r23_allprobes,public_group_representative,1,500,500,446,8,0,321,,6,6,6,140533,0,3621.5490373079956,0,1.0,54,0.75,23422.166666666668
+lit_bulk,lit_bulk:O05_reseed_v20261117,sella_prfo_diag4_abs01,public_group_representative,1,500,446,445,52,0,124,,31,28,28,127666,0,7558.481269721002,0,0.892,1,0.5961538461538461,4118.258064516129
+lit_bulk,lit_bulk:O05_reseed_v20261117,tsbfgs_dimer_rot4_frot01_r23_allprobes,public_group_representative,1,500,494,479,52,0,276,,21,19,19,244186,0,12835.541141104986,0,0.988,15,0.40384615384615385,11627.904761904761
 lit_oc20,lit_metal_surfaces:C01,sella_prfo_diag4_abs01,public_group_representative,1,500,500,473,12,3,419,,12,12,12,30821,0,1004.8575835610006,0,1.0,27,1.0,2568.4166666666665
 lit_oc20,lit_metal_surfaces:C01,tsbfgs_dimer_rot4_frot01_r23_allprobes,public_group_representative,1,500,491,478,12,3,412,,12,12,12,54763,0,1477.9632261810011,0,0.982,13,1.0,4563.583333333333
 lit_oc20,lit_metal_surfaces:C02fam_bare_Pt111_4H_2sqrt7_v20261118,sella_prfo_diag4_abs01,public_group_representative,1,500,495,469,42,3,305,,21,21,21,39851,0,1977.587604650001,0,0.99,26,0.5,1897.6666666666667
@@ -35,7 +43,15 @@ lit_oc20,lit_metal_surfaces:C06_flat_N2_Ru0001_224_v20261115,sella_prfo_diag4_ab
 lit_oc20,lit_metal_surfaces:C06_flat_N2_Ru0001_224_v20261115,tsbfgs_dimer_rot4_frot01_r23_allprobes,public_group_representative,1,500,498,445,94,0,128,,33,33,33,132980,0,6790.733711864998,0,0.996,53,0.35106382978723405,4029.6969696969695
 lit_oc20,lit_metal_surfaces:C07_CH3_H_Ni111_85_v20261115,sella_prfo_diag4_abs01,public_group_representative,1,500,492,486,22,1,73,,17,17,17,52040,0,1541.9321079860006,0,0.984,6,0.7727272727272727,3061.176470588235
 lit_oc20,lit_metal_surfaces:C07_CH3_H_Ni111_85_v20261115,tsbfgs_dimer_rot4_frot01_r23_allprobes,public_group_representative,1,500,499,470,22,1,107,,14,14,14,101984,0,2502.973583742999,0,0.998,29,0.6363636363636364,7284.571428571428
+lit_oc22,lit_oxide_surfaces:O02,sella_prfo_diag4_abs01,public_group_representative,1,500,427,410,48,0,140,,32,32,32,224561,0,21048.100071578985,0,0.854,17,0.6666666666666666,7017.53125
+lit_oc22,lit_oxide_surfaces:O02,tsbfgs_dimer_rot4_frot01_r23_allprobes,public_group_representative,1,500,426,374,48,0,95,,28,28,28,358191,0,29086.85590623002,0,0.852,52,0.5833333333333334,12792.535714285714
+lit_oc22,lit_oxide_surfaces:O03_H2O_at_vacancy_TiO2_290_v20261115,sella_prfo_diag4_abs01,public_group_representative,1,500,384,85,19,0,14,,6,6,6,279714,0,28171.012484494,0,0.768,299,0.3157894736842105,46619.0
+lit_oc22,lit_oxide_surfaces:O03_H2O_at_vacancy_TiO2_290_v20261115,tsbfgs_dimer_rot4_frot01_r23_allprobes,public_group_representative,1,500,360,118,19,0,82,,8,8,8,589198,0,48632.554599061004,0,0.72,242,0.42105263157894735,73649.75
 lit_oc22,lit_oxide_surfaces:O04,sella_prfo_diag4_abs01,public_group_representative,1,500,495,339,3,0,8,,3,3,3,85419,0,2244.657196051002,0,0.99,156,1.0,28473.0
 lit_oc22,lit_oxide_surfaces:O04,tsbfgs_dimer_rot4_frot01_r23_allprobes,public_group_representative,1,500,491,397,3,0,13,,3,3,3,122347,0,5299.354843512999,0,0.982,94,1.0,40782.333333333336
+lit_oc22,lit_oxide_surfaces:O06,sella_prfo_diag4_abs01,public_group_representative,1,500,424,372,195,0,111,,47,47,47,307436,0,8088.751472664008,0,0.848,52,0.24102564102564103,6541.191489361702
+lit_oc22,lit_oxide_surfaces:O06,tsbfgs_dimer_rot4_frot01_r23_allprobes,public_group_representative,1,500,464,377,195,0,136,,42,42,42,475468,0,15114.521236408007,0,0.928,87,0.2153846153846154,11320.666666666666
 lit_oc22,lit_oxide_surfaces:O08,sella_prfo_diag4_abs01,public_group_representative,1,500,406,397,94,0,102,,23,21,21,137445,0,8372.801009070005,0,0.812,9,0.24468085106382978,5975.869565217391
 lit_oc22,lit_oxide_surfaces:O08,tsbfgs_dimer_rot4_frot01_r23_allprobes,public_group_representative,1,500,488,475,94,0,150,,25,22,21,205465,0,9596.450082646998,0,0.976,13,0.26595744680851063,8218.6
+lit_oc20,oc20:pt_343,sella_prfo_diag4_abs01,public_group_representative,1,500,479,418,105,16,367,,31,31,31,59576,0,4852.992552876997,0,0.958,61,0.29523809523809524,1921.8064516129032
+lit_oc20,oc20:pt_343,tsbfgs_dimer_rot4_frot01_r23_allprobes,public_group_representative,1,500,460,424,105,16,364,,32,32,32,104041,0,6207.770409780005,0,0.92,36,0.3047619047619048,3251.28125
