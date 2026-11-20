@@ -315,6 +315,10 @@ def complete_link_diameter(geometries):
     return max((core_drift_maxdev(a,b) for i,a in enumerate(geometries) for b in geometries[i+1:]),default=0.0)
 
 
+def _anchor_indices(n):
+    return sorted({0, n//4, n//2, (3*n)//4, n-1})
+
+
 def cannot_match_by_anchor(a,b,maxdev):
     """Certified necessary condition for a core-drift maxdev match.
 
@@ -338,7 +342,7 @@ def cannot_match_by_anchor(a,b,maxdev):
         not np.isfinite(cb).all() or np.max(np.abs(ca-cb))>0.05):
         return False
     n=len(pa)
-    selected=sorted({0,n//4,n//2,(3*n)//4,n-1})
+    selected=_anchor_indices(n)
     displacement=pb[selected]-pa[selected]
     try:
         relative=_mic(displacement-displacement[0],ca,a['pbc'])
@@ -390,15 +394,18 @@ class BatchedAnchorFilter:
             if self.all_atoms and positions.shape[1] > 16 and len(data) > 16:
                 relative = positions - positions[:, :1, :]
                 spread = np.var(relative, axis=0).sum(axis=1)
-                # Try atoms that separate the references before scanning every atom.
-                sample = np.r_[0, np.argsort(spread[1:])[-15:] + 1]
+                # Retain the original anchors so adding atoms can only reject
+                # more candidates. Fill remaining slots with the largest spread.
+                original = _anchor_indices(len(spread))
+                spread[original] = -np.inf
+                sample = np.r_[original, np.argsort(spread)[-(16-len(original)):]]
             self.buckets[key] = (
                 np.asarray([d[0] for d in data], dtype=np.intp),
                 positions, np.stack([d[2] for d in data]), sample,
             )
 
     def _selected(self, n):
-        return slice(None) if self.all_atoms else sorted({0, n//4, n//2, (3*n)//4, n-1})
+        return slice(None) if self.all_atoms else _anchor_indices(n)
 
     def possible(self, query, maxdev):
         """Return ordered True=must-check mask, with no false match omissions."""
@@ -438,9 +445,10 @@ class BatchedAnchorFilter:
             cutoff = 2. * float(maxdev) + 1e-8 + guard
             def reject(rel):
                 rel -= rel[:, :1, :]
-                # Avoid cancellation in enormous coordinates.
-                if np.max(np.abs(rel)) >= 1e5:
-                    return np.zeros(len(rel), dtype=bool)
+                # Skip numerically unsafe vectors individually. An inconclusive
+                # added atom cannot undo a rejection proved by another atom.
+                if not np.max(np.abs(rel)) < 1e5:
+                    rel[~(np.abs(rel) < 1e5).all(axis=2)] = 0.
                 # The orthogonal residual and the minimum singular value
                 # bound the distance to every periodic image from below.
                 if basis is None:
@@ -453,8 +461,7 @@ class BatchedAnchorFilter:
                     lower_sq = (np.einsum('ij,ij->i', normal, normal)
                                 + sigma*sigma*np.einsum('ij,ij->i', residue, residue))
                     lower_sq = lower_sq.reshape(len(rel), -1)
-                return ((lower_sq > cutoff*cutoff).any(axis=1)
-                        & np.isfinite(lower_sq).all(axis=1))
+                return ((lower_sq > cutoff*cutoff) & np.isfinite(lower_sq)).any(axis=1)
 
             for lo in range(0, len(indices), self.chunk_size):
                 hi = min(lo + self.chunk_size, len(indices))

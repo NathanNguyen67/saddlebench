@@ -169,8 +169,19 @@ def test_staged_screen_checks_atoms_outside_its_first_pass():
         configuration.positions[5:, 1] += amount * 0.01
         references.append(geometry(configuration))
     screening = BatchedAnchorFilter(references, all_atoms=True)
+    _, _, _, sample = next(iter(screening.buckets.values()))
+    assert len(sample) == 16
+    original = {0, 5, 10, 15, 19}
+    assert original.issubset(sample)
     prediction = reference.copy()
     prediction.positions[2, 1] = 0.55
     assert not screening.possible(geometry(prediction), 0.2).any()
     prediction.positions[2, 1] = 0.19
     assert screening.possible(geometry(prediction), 0.2)[0]
+
+    # An inconclusive extra atom must preserve a rejection from the original five.
+    extra = next(i for i in sample if i not in original)
+    prediction = reference.copy()
+    prediction.positions[5, 1] = 0.55
+    prediction.positions[extra, 1] = 1e6
+    assert not screening.possible(geometry(prediction), 0.2)[0]
