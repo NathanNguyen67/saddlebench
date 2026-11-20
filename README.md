@@ -9,7 +9,8 @@ git clone --branch uma-20261119 --single-branch https://github.com/NathanNguyen6
 cd saddlebench
 python3.11 -m venv .venv
 . .venv/bin/activate
-python -m pip install .
+python -m pip install "numpy==1.26.4" "scipy==1.13.1" "pyarrow==21.0.0" \
+  "ase==3.29.0" "huggingface_hub==2.4.0" .
 export OPENBLAS_NUM_THREADS=1
 export HF_HUB_DISABLE_XET=1
 
@@ -37,7 +38,7 @@ The eligible reference comes from the published per-seed records for seed-connec
 
 An outside-reference prediction has no eligible geometry within 0.20 Å. The report gives both the number of these frames and the number of distinct outside groups. To count distinct outside groups, visit unmatched frames in submission order and add a representative only when it is farther than 0.20 Å from every earlier representative under the same geometry criterion. Repeated frames therefore contribute one outside group.
 
-The score returns the selected original endpoint-pair record for each matched group, including its published observation counts. Pair selection uses the case's seed connection, then the lowest sum of canonical `energy_a_eV` and `energy_b_eV`, then canonical endpoint IDs for ties. All original pairs are available in the public `endpoint_pairs.parquet`.
+The score returns the selected original endpoint-pair record for each matched group, including its published observation counts. For matched reference groups, pair selection uses complete pairs with distinct endpoints. It prefers a connection to the case's seed, then the lowest sum of canonical `energy_a_eV` and `energy_b_eV`, then canonical endpoint IDs for ties. All original pairs are available in the public `endpoint_pairs.parquet`.
 
 ## Baseline data and metrics
 

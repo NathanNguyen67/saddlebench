@@ -10,6 +10,7 @@ import pytest
 
 from saddlebench.public_entrypoint import main
 from saddlebench.reference.uma import REPO, REVISION, UmaDataset, select_endpoint_pair
+from saddlebench.scoring.uma import SeedScorer, geometry
 
 
 def pair(a, b, ea, eb, connected=None):
@@ -58,7 +59,8 @@ def export(tmp_path, monkeypatch):
                     for i, sid in [(1, "saddle"), (2, "other")]],
         "reference": [{**case, "saddle_id": sid, "barrier_eV": barrier}
                       for sid, barrier in [("saddle", .99), ("other", 1.0)]],
-        "endpoint_pairs": [pair("a", "seed", -3, -4, "seed")],
+        "endpoint_pairs": [pair("a", "seed", -3, -4, "seed"),
+                           pair("seed", "seed", -4, -4, "seed")],
     }
     for name, rows in tables.items():
         pq.write_table(pa.Table.from_pylist(rows), root / f"{name}.parquet")
@@ -91,6 +93,7 @@ def test_public_uma_cli_counts_predictions(export, suffix):
     assert result["reported_search_wall_s"] == 42
     assert result["physical_pes_calls"] == 50
     assert result["default_endpoint_pairs"]["saddle"]["n_observations"] == 2
+    assert result["default_endpoint_pairs"]["saddle"]["minimum_a"] == "a"
 
 
 def test_confidence_filter(export, capsys):
@@ -106,3 +109,13 @@ def test_manifest_rejects_tampered_table(export):
         handle.write(b"tampered")
     with pytest.raises(ValueError, match="checksum mismatch for seeds.parquet"):
         UmaDataset().table("seeds")
+
+
+def test_inclusive_maxdev_cutoff():
+    reference = Atoms("H4", positions=[[1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0, 0]])
+    scorer = SeedScorer({"reference": geometry(reference)})
+    for distance, matches in [(0.2, 1), (0.20000001, 0)]:
+        prediction = reference.copy()
+        prediction.positions[-1, 0] += distance
+        result = scorer.score([(None, geometry(prediction))])
+        assert result["matched_reference_groups"]["0.20"] == matches

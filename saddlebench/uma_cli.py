@@ -33,9 +33,11 @@ def main(argv):
     report = scorers[minimum_id].score(
         (None, geometry(atoms)) for atoms in iread(args.submission, index=":")
     )
+    matched = set(report["matched_saddle_ids"])
     pairs = defaultdict(list)
     for pair in dataset.table("endpoint_pairs", filters=[("parent_id", "=", parent)]).to_pylist():
-        if pair["saddle_id"] in report["matched_saddle_ids"]:
+        if (pair["saddle_id"] in matched and pair["n_complete"]
+                and pair["minimum_a"] != pair["minimum_b"]):
             pairs[pair["saddle_id"]].append(pair)
     report.update(
         hf_revision=REVISION, case_id=args.case_id, minimum_id=minimum_id, parent_id=parent,
