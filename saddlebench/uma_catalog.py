@@ -13,7 +13,7 @@ from saddlebench.scoring.uma import UmaScoring
 def select_cases(scoring, dataset=None):
     return [seed for seed in sorted(scoring.seeds.values(), key=lambda seed: seed["case_id"])
             if seed["confident"] and (
-                dataset is None or scoring.datasets[seed["parent_id"]] == dataset
+                dataset in (None, "all") or scoring.datasets[seed["parent_id"]] == dataset
                 or dataset == "literature" and scoring.datasets[seed["parent_id"]].startswith("lit_")
             )]
 
@@ -21,12 +21,12 @@ def select_cases(scoring, dataset=None):
 def add_dataset_argument(parser, *, required=False, default=None):
     parser.add_argument("--dataset", required=required, default=default, help=(
         "Benchmark dataset, e.g. lit_oc20, lit_oc22, lit_bulk, lit_battery, oc20, oc22, "
-        "lemat, mp20bat, or literature for all lit_* datasets"
+        "lemat, mp20bat, literature for all lit_* datasets, or all"
     ))
 
 
 def check_dataset(parser, scoring, label):
-    if label is not None and label not in set(scoring.datasets.values()) | {"literature"}:
+    if label is not None and label not in set(scoring.datasets.values()) | {"literature", "all"}:
         parser.error(f"unknown dataset {label!r}; run saddlebench cases to see dataset names")
 
 

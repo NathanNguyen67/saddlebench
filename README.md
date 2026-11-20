@@ -40,6 +40,7 @@ saddlebench seed --case-id case0046 --output case0046.traj
 | `oc20`, `oc22` | Confident cases from those datasets |
 | `lemat`, `mp20bat` | Confident cases from those bulk datasets |
 | `literature` | All four `lit_*` datasets together |
+| `all` | All 70 confident seeds across the datasets |
 
 Al and Pt belong to `lit_oc20`. Both are below the confidence threshold in this release, so their prefilled attempts are available in the full attempt table and omitted from benchmark scoring.
 

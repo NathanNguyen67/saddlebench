@@ -274,6 +274,8 @@ def test_dataset_score_and_seed_download(export, capsys):
     output = folder / "scores.csv"
     assert main(["cases", "--dataset", "lit_oc20"]) == 0
     assert "case0001,lit_oc20,parent,1" in capsys.readouterr().out
+    assert main(["cases", "--dataset", "all"]) == 0
+    assert "case0001,lit_oc20,parent,1" in capsys.readouterr().out
     assert main(["score", "--dataset", "lit_oc20", "--submission-dir", str(folder),
                  "--output", str(output), "--recall-only"]) == 0
     assert "case0001,lit_oc20,parent,4,1" in output.read_text()
