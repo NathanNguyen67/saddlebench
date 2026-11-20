@@ -9,18 +9,24 @@ FIELDS = ("projection", "periods", "weights", "profiles", "features", "keys", "r
 
 
 def _profile_bound(difference, periods, weights, dim, radius):
-    difference[..., :dim] -= np.rint(difference[..., :dim] / periods[:dim]) * periods[:dim]
-    # The minimum singular value bounds the periodic contribution.
-    # The orthonormal normal-space coordinates give the remainder.
-    weighted = difference * weights
-    squared = np.einsum("ijk,ijk->ij", weighted, weighted).max(axis=1)
-    bound = np.maximum(np.sqrt(squared), np.abs(difference).max(axis=(1, 2)))
+    # Store atom coordinates contiguously per axis for the reductions below.
+    box = periods[:dim, None]
+    difference[:, :dim] -= np.rint(difference[:, :dim] / box) * box
+    low = difference.min(axis=2)
+    high = difference.max(axis=2)
+    bound = np.maximum(-low, high)
     # A possible match has a unique wrap along these axes. The span
     # bounds the separation of any two atoms along the same axis.
     unique_wrap = (periods == 0) | (periods > 2 * radius)
-    if unique_wrap.any():
-        span = np.ptp(difference, axis=1)[:, unique_wrap].max(axis=1)
-        bound = np.maximum(bound, span)
+    bound[:, unique_wrap] = high[:, unique_wrap] - low[:, unique_wrap]
+    bound = bound.max(axis=1)
+    # The minimum singular value bounds the periodic contribution. Fuse
+    # the weights into the squared norm to avoid a second displacement array.
+    possible = bound <= radius
+    if possible.any():
+        delta = difference if possible.all() else difference[possible]
+        squared = np.einsum("rda,rda,d->ra", delta, delta, weights**2).max(axis=1)
+        bound[possible] = np.maximum(bound[possible], np.sqrt(squared))
     return bound
 
 
@@ -33,8 +39,9 @@ class ProfileIndex:
         self.feature_periods = arrays["periods"][arrays["features"] % 3]
         profiles = arrays["profiles"]
         self.short_profiles = np.ascontiguousarray(profiles.reshape(len(profiles), -1)[:, arrays["features"]])
+        self.profiles = np.ascontiguousarray(profiles.transpose(0, 2, 1))
         self.anchors = _anchor_indices(len(numbers))
-        self.anchor_profiles = np.ascontiguousarray(profiles[:, self.anchors])
+        self.anchor_profiles = np.ascontiguousarray(self.profiles[:, :, self.anchors])
 
     @classmethod
     def build(cls, geometries):
@@ -131,12 +138,16 @@ class ProfileIndex:
         # slabs. Test the original small atom set before reading all profiles.
         weights = data["weights"]
         if len(closest) > 8 and len(self.anchors) < len(profile):
-            probe = self.anchor_profiles[closest] - profile[self.anchors]
+            probe = self.anchor_profiles[closest] - profile[self.anchors].T
             closest = closest[_profile_bound(probe, periods, weights, dim, radius) <= radius]
             if not len(closest):
                 return closest, np.empty(0)
 
-        difference = data["profiles"][closest] - profile
+        if len(closest) == 1:
+            # With one reference left, verify it directly.
+            return closest, np.zeros(1)
+
+        difference = self.profiles[closest] - profile.T
         bound = _profile_bound(difference, periods, weights, dim, radius)
         keep = bound <= radius
         return closest[keep], (np.maximum(0., bound[keep] - SLACK) / 2.)

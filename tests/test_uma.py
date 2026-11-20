@@ -263,3 +263,20 @@ def test_decoded_reference_cache_reuses_verified_geometry(export, monkeypatch):
     warm = UmaScoring(UmaDataset(directory)).structure("parent", ["seed"])["seed"]
     prediction = {"geometry": original.records[0]["geometry"]}
     assert original.nearest(prediction["geometry"]) == warm.nearest(prediction["geometry"])
+
+
+def test_one_profile_candidate_still_requires_exact_match():
+    atoms = Atoms("H8", positions=[[j*.75, 0., 0.] for j in range(8)])
+    refs = {}
+    for i in range(24):
+        ref = atoms.copy()
+        ref.positions[-1, 1] += i * .8
+        refs[str(i)] = geometry(ref, arrays=True)
+    scorer = SeedScorer(refs)
+    for displacement, expected in [(0.19, "0"), (0.25, None)]:
+        prediction = atoms.copy()
+        prediction.positions[-1, 1] += displacement
+        geom = geometry(prediction, arrays=True)
+        assert len(scorer.index.candidates(geom, .2)[0]) == 1
+        match = scorer.nearest(geom)
+        assert (match and match["identity_id"]) == expected
