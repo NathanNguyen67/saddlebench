@@ -9,29 +9,13 @@ import pyarrow.parquet as pq
 import pytest
 
 from saddlebench.public_entrypoint import main
-from saddlebench.reference.uma import REPO, REVISION, UmaDataset, select_endpoint_pair
+from saddlebench.reference.uma import REPO, REVISION, UmaDataset
 from saddlebench.scoring.uma import SeedScorer, geometry
 
 
-def pair(a, b, ea, eb, connected=None):
-    return dict(minimum_a=a, minimum_b=b, energy_a_eV=ea, energy_b_eV=eb,
-                seed_barriers=[{"minimum_id": connected}] if connected else [],
-                n_complete=1, n_observations=2, parent_id="parent", saddle_id="saddle")
-
-
-def test_endpoint_choice():
-    fallback = pair("a", "b", -12., -13.)
-    connected = pair("seed", "c", -8., -9., "seed")
-    best = pair("seed", "b", -8., -10., "seed")
-    tie = pair("seed", "d", -8., -10., "seed")
-    assert select_endpoint_pair([fallback, connected, tie, best], "seed") is best
-    assert select_endpoint_pair([best, connected, fallback], "other") is fallback
-    assert select_endpoint_pair([tie, best], "seed") is best
-    assert select_endpoint_pair([], "seed") is None
-
-
 @pytest.fixture
-def export(tmp_path, monkeypatch):
+def export(tmp_path, monkeypatch, request):
+    confident = getattr(request, 'param', True)
     root = tmp_path / "export"
     root.mkdir()
     shard = root / "geometries" / "structure0001.traj"
@@ -51,16 +35,15 @@ def export(tmp_path, monkeypatch):
     case = {"case_id": "case0001", "minimum_id": "seed", "parent_id": "parent"}
     (root / "cases.csv").write_text(
         "case_id,minimum_id,parent_id,confident,geometry_path,geometry_index\n"
-        "case0001,seed,parent,False,geometries/structure0001.traj,0\n"
+        f"case0001,seed,parent,{confident},geometries/structure0001.traj,0\n"
     )
     tables = {
-        "seeds": [{**case, **locations, "geometry_index": 0, "confident": False}],
+        "seeds": [{**case, **locations, "geometry_index": 0, "confident": confident}],
         "saddles": [{**locations, "parent_id": "parent", "saddle_id": sid, "geometry_index": i}
                     for i, sid in [(1, "saddle"), (2, "other")]],
         "reference": [{**case, "saddle_id": sid, "barrier_eV": barrier}
                       for sid, barrier in [("saddle", .99), ("other", 1.0)]],
-        "endpoint_pairs": [pair("a", "seed", -3, -4, "seed"),
-                           pair("seed", "seed", -4, -4, "seed")],
+        "structures": [{"parent_id": "parent", "dataset": "lit_metal_surfaces"}],
     }
     for name, rows in tables.items():
         pq.write_table(pa.Table.from_pylist(rows), root / f"{name}.parquet")
@@ -92,13 +75,13 @@ def test_public_uma_cli_counts_predictions(export, suffix):
     assert result["predictions_scored"] == 4
     assert result["reported_search_wall_s"] == 42
     assert result["physical_pes_calls"] == 50
-    assert result["default_endpoint_pairs"]["saddle"]["n_observations"] == 2
-    assert result["default_endpoint_pairs"]["saddle"]["minimum_a"] == "a"
+    assert result["dataset"] == "lit_oc20"
 
 
+@pytest.mark.parametrize("export", [False], indirect=True)
 def test_confidence_filter(export, capsys):
     with pytest.raises(SystemExit) as exc:
-        main(["score", "--case-id", "case0001", "--submission", "unused.traj", "--confident-only"])
+        main(["score", "--case-id", "case0001", "--submission", "unused.traj"])
     assert exc.value.code == 2
     assert "confidence threshold" in capsys.readouterr().err
 
@@ -280,3 +263,36 @@ def test_one_profile_candidate_still_requires_exact_match():
         assert len(scorer.index.candidates(geom, .2)[0]) == 1
         match = scorer.nearest(geom)
         assert (match and match["identity_id"]) == expected
+
+
+def test_dataset_score_and_seed_download(export, capsys):
+    import shutil
+    from ase.io import read
+
+    folder = export.parent
+    shutil.copyfile(folder / "predictions.traj", folder / "case0001.traj")
+    output = folder / "scores.csv"
+    assert main(["cases", "--dataset", "lit_oc20"]) == 0
+    assert "case0001,lit_oc20,parent,1" in capsys.readouterr().out
+    assert main(["score", "--dataset", "lit_oc20", "--submission-dir", str(folder),
+                 "--output", str(output), "--recall-only"]) == 0
+    assert "case0001,lit_oc20,parent,4,1" in output.read_text()
+    assert main(["seed", "--dataset", "lit_oc20", "--output-dir", str(folder / "seeds")]) == 0
+    assert read(folder / "seeds" / "case0001.traj").info["saddlebench_id"] == "seed"
+
+
+def test_aligned_overlay_removes_reference_group(export, monkeypatch):
+    import saddlebench.scoring.uma as scoring
+
+    (export / "uma_aligned.csv").write_text("minimum_id,saddle_id\nseed,saddle\n")
+    monkeypatch.setattr(scoring, "files", lambda _: export)
+    model = scoring.UmaScoring(UmaDataset(export.parent / "cache"))
+    assert list(model.references["seed"]) == []
+    assert model.aligned_counts["seed"] == 1
+
+
+def test_al_and_pt_are_in_lit_oc20():
+    from saddlebench.scoring.uma import dataset_label
+    assert dataset_label("oc20:al_385", "oc20") == "lit_oc20"
+    assert dataset_label("oc20:pt_343", "oc20") == "lit_oc20"
+    assert dataset_label("oc20:1234", "oc20") == "oc20"

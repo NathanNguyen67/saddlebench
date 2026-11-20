@@ -15,8 +15,6 @@ from saddlebench.reference import array_cache
 
 REPO = "traingletrain/saddlebench-uma"
 REVISION = "acdac15b98282a9137a76c060913fcc0ce08462b"
-SEARCH_REPO = "traingletrain/saddlebench-uma-benchmark-search"
-SEARCH_REVISION = None
 
 
 class UmaDataset:
@@ -64,26 +62,18 @@ def verify_file(path, expected, name):
 
 
 class BenchmarkSearchFrames:
-    """Exact Search geometries published separately from the answer key."""
-    def __init__(self, cache_dir=None, *, directory=None):
+    """Read a local copy of the exact benchmark Search geometries."""
+    def __init__(self, cache_dir=None, *, directory):
         self.cache_dir = cache_dir
         self.directory = directory
-        self.manifest = json.loads(self.download("MANIFEST.json").read_text())
+        self.manifest = json.loads((directory / "MANIFEST.json").read_text())
         if self.manifest["source_hf_revision"] != REVISION:
             raise ValueError("Benchmark Search supplement targets a different UMA revision")
-
-    def download(self, name):
-        if self.directory is not None:
-            return self.directory / name
-        if SEARCH_REVISION is None:
-            raise ValueError("Benchmark Search supplement awaiting publication. Use --search-geometry-dir.")
-        return Path(hf_hub_download(SEARCH_REPO, name, repo_type="dataset",
-                                    revision=SEARCH_REVISION, cache_dir=self.cache_dir))
 
     def frames(self, parent):
         info = self.manifest["structures"][parent]
         name = info["shard"]
-        path = self.download(name)
+        path = self.directory / name
         compressed = path.read_bytes()
         if hashlib.sha256(compressed).hexdigest() != info["sha256"]:
             raise ValueError(f"UMA manifest checksum mismatch for {name}: {path}")
@@ -104,13 +94,3 @@ class BenchmarkSearchFrames:
             frames[seq] = array_cache.geometry(atoms, arrays=True)
         array_cache.save(path, frames)
         return frames
-
-
-def select_endpoint_pair(pairs, minimum_id):
-    """Return an original pair row, including its exported observation counts."""
-    def order(pair):
-        connected = any(seed["minimum_id"] == minimum_id for seed in pair["seed_barriers"])
-        return (not connected, pair["energy_a_eV"] + pair["energy_b_eV"],
-                pair["minimum_a"], pair["minimum_b"])
-
-    return min(pairs, key=order, default=None)

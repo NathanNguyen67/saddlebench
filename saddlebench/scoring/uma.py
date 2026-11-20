@@ -1,6 +1,8 @@
 """Score ASE saddle predictions against the published per-seed reference."""
 from collections import defaultdict
+import csv
 from hashlib import sha256
+from importlib.resources import files
 import json
 from types import SimpleNamespace
 
@@ -105,15 +107,36 @@ def distinct_outside(predictions):
     return len(representatives)
 
 
+def dataset_label(parent_id, source):
+    if source == "lit_metal_surfaces" or parent_id in {"oc20:al_385", "oc20:pt_343"}:
+        return "lit_oc20"
+    if source == "lit_oxide_surfaces":
+        return "lit_oc22"
+    return source
+
+
 class UmaScoring:
     def __init__(self, dataset):
         self.dataset = dataset
-        self.revision_digest = sha256(json.dumps(dataset.manifest, sort_keys=True).encode()).hexdigest()
+        overlay = files("saddlebench.reference").joinpath("uma_aligned.csv").read_text()
+        self.revision_digest = sha256(
+            (json.dumps(dataset.manifest, sort_keys=True) + overlay).encode()
+        ).hexdigest()
         self.seeds = {row["minimum_id"]: row for row in dataset.table("seeds").to_pylist()}
+        self.datasets = {
+            row["parent_id"]: dataset_label(row["parent_id"], row["dataset"])
+            for row in dataset.table("structures", columns=["parent_id", "dataset"]).to_pylist()
+        }
         self.references = defaultdict(dict)
+        self.aligned_counts = defaultdict(int)
+        aligned = {(row["minimum_id"], row["saddle_id"]) for row in csv.DictReader(overlay.splitlines())}
         for row in dataset.table("reference").to_pylist():
-            if row["barrier_eV"] < 1.0:
-                self.references[row["minimum_id"]][row["saddle_id"]] = row
+            mid, sid = row["minimum_id"], row["saddle_id"]
+            if self.seeds[mid]["confident"] and row["barrier_eV"] < 1.0:
+                if (mid, sid) in aligned:
+                    self.aligned_counts[mid] += 1
+                else:
+                    self.references[mid][sid] = row
 
     def structure(self, parent, seeds):
         scorers, pending = {}, {}

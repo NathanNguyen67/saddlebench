@@ -4,14 +4,19 @@ import csv
 from collections import Counter, defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
+from io import BytesIO
 from multiprocessing import get_context
 from pathlib import Path
 from time import perf_counter
+from zipfile import ZipFile
+
+from ase.io.trajectory import Trajectory
 
 import pyarrow.parquet as pq
 
-from saddlebench.reference.uma import REVISION, SEARCH_REVISION, BenchmarkSearchFrames, UmaDataset
-from saddlebench.scoring.uma import UmaScoring
+from saddlebench.reference.uma import REVISION, BenchmarkSearchFrames, UmaDataset
+from saddlebench.scoring.uma import GEOMETRY_COLUMNS, UmaScoring, geometry
+from saddlebench.uma_catalog import add_dataset_argument, check_dataset, select_cases
 
 COHORT = "bench_20261118"
 METHODS = ("sella_prfo_diag4_abs01", "tsbfgs_dimer_rot4_frot01_r23_allprobes")
@@ -24,7 +29,7 @@ def load_attempts(dataset, path=None):
         return pq.read_table(handle)
 
 
-def summarize(scoring, attempts, search, workers=1, *, group_outside=True):
+def summarize(scoring, attempts, search=None, workers=1, *, group_outside=True, dataset=None, archive=None):
     rows = attempts.to_pylist()
     groups = Counter((row["minimum_id"], row["method_id"]) for row in rows)
     if (len(rows) != 36000 or len({row["seq"] for row in rows}) != 36000
@@ -32,16 +37,18 @@ def summarize(scoring, attempts, search, workers=1, *, group_outside=True):
             or set(groups.values()) != {500} or set(m for _, m in groups) != set(METHODS)
             or len({mid for mid, _ in groups}) != 36):
         raise ValueError("Expected 36 unique seeds with 500 attempts for each of the two baseline methods")
+    selected = {seed['minimum_id'] for seed in select_cases(scoring, dataset)}
     by_structure = defaultdict(lambda: defaultdict(list))
     for row in sorted(rows, key=lambda row: row["seq"]):
         mid, parent = row["minimum_id"], row["parent_id"]
         if (scoring.seeds[mid]["parent_id"] != parent
                 or not (parent.startswith("lit_") or parent in {"oc20:al_385", "oc20:pt_343"})):
             raise ValueError(f"Unexpected baseline seed or parent: {mid}, {parent}")
-        by_structure[parent][mid, row["method_id"]].append(row)
+        if mid in selected:
+            by_structure[parent][mid, row["method_id"]].append(row)
 
     structures = sorted(by_structure.items())
-    score = partial(score_structure, scoring=scoring, search=search, group_outside=group_outside)
+    score = partial(score_structure, scoring=scoring, search=search, archive=archive, group_outside=group_outside)
     if workers == 1:
         for item in structures:
             yield from score(item)
@@ -62,13 +69,46 @@ def summarize(scoring, attempts, search, workers=1, *, group_outside=True):
             yield from jobs[parent].result()
 
 
-def score_structure(item, *, scoring, search, group_outside):
+def predictions_for_structure(parent, submissions, scoring, search, archive):
+    if archive is not None:
+        frames = {}
+        with ZipFile(archive) as bundle:
+            for (mid, method), rows in submissions.items():
+                case = scoring.seeds[mid]["case_id"]
+                name = f"{case}/{method}.traj"
+                converged = [row["seq"] for row in rows if row["converged"]]
+                with Trajectory(BytesIO(bundle.read(name))) as trajectory:
+                    if len(trajectory) != len(converged):
+                        raise ValueError(f"Wrong number of converged frames in {name}")
+                    frames.update((seq, geometry(atoms, arrays=True))
+                                  for seq, atoms in zip(converged, trajectory))
+        return frames, "exact_search"
+    if search is not None:
+        frames = search.geometries(parent)
+        expected = {row["seq"] for rows in submissions.values() for row in rows if row["converged"]}
+        if not expected.issubset(frames):
+            raise ValueError(f"Missing Search geometries for {parent}")
+        return frames, "exact_search"
+
+    attempts = [row for rows in submissions.values() for row in rows if row["converged"]]
+    ids = {row["saddle_id"] for row in attempts}
+    records = {
+        row["saddle_id"]: row
+        for row in scoring.dataset.table(
+            "saddles", columns=["saddle_id", *GEOMETRY_COLUMNS],
+            filters=[("parent_id", "=", parent)],
+        ).to_pylist()
+        if row["saddle_id"] in ids
+    }
+    representatives = {sid: geometry(atoms, arrays=True) for sid, atoms in scoring.dataset.frames(records)}
+    return {row["seq"]: representatives[row["saddle_id"]] for row in attempts
+            if row["saddle_id"] in representatives}, "public_group_representative"
+
+
+def score_structure(item, *, scoring, search, archive, group_outside):
     parent, submissions = item
     seeds = sorted({mid for mid, _ in submissions})
-    expected = {row["seq"] for group in submissions.values() for row in group if row["converged"]}
-    frames = search.geometries(parent)
-    if frames.keys() != expected:
-        raise ValueError(f"Search geometry coverage differs from converged attempt rows for {parent}")
+    frames, geometry_source = predictions_for_structure(parent, submissions, scoring, search, archive)
     scorers = scoring.structure(parent, seeds)
     totals = defaultdict(Counter)
     for (mid, method), group in submissions.items():
@@ -78,10 +118,12 @@ def score_structure(item, *, scoring, search, group_outside):
         converged = [row for row in group if row["converged"]]
         counts["converged"] += len(converged)
         report = scorers[mid].score(
-            (frames[row["seq"]] for row in converged), group_outside=group_outside,
+            (frames[row["seq"]] for row in converged if row["seq"] in frames),
+            group_outside=group_outside,
         )
         counts["predictions_scored"] += report["predictions_scored"]
         counts["eligible_reference_groups"] += report["eligible_reference_groups"]
+        counts["excluded_aligned_groups"] += scoring.aligned_counts[mid]
         counts["outside_reference_predictions"] += report["outside_reference_predictions"]
         if group_outside:
             counts["outside_reference_groups"] += report["outside_reference_groups"]
@@ -100,7 +142,8 @@ def score_structure(item, *, scoring, search, group_outside):
         found = counts["reference_groups_found_0.20_A"]
         eligible = counts["eligible_reference_groups"]
         results.append({
-            "parent_id": parent, "method_id": method, **counts,
+            "dataset": scoring.datasets[parent], "parent_id": parent, "method_id": method,
+            "geometry_source": geometry_source, **counts,
             "convergence_rate": counts["converged"] / counts["attempts"],
             "converged_without_exported_geometry": counts["converged"] - counts["predictions_scored"],
             "recall_0.20_A": found / eligible if eligible else None,
@@ -117,7 +160,10 @@ def main(argv):
     parser.add_argument("--attempts", type=Path, help="Bundled baseline Parquet table (default fetches pinned export)")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--cache-dir", type=Path)
-    parser.add_argument("--search-geometry-dir", type=Path, help="Use a local copy of the exact Search supplement")
+    add_dataset_argument(parser, default="literature")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--search-geometry-dir", type=Path, help="Use local exact Search shards")
+    source.add_argument("--geometry-zip", type=Path, help="Use the exact Search trajectory ZIP")
     parser.add_argument("--workers", type=int, default=1, help="Score independent structures in parallel")
     parser.add_argument("--recall-only", action="store_true", help="Skip grouping unmatched predictions")
     args = parser.parse_args(argv)
@@ -125,11 +171,16 @@ def main(argv):
         parser.error("--workers must be positive")
     start = perf_counter()
     dataset = UmaDataset(args.cache_dir)
-    search = BenchmarkSearchFrames(args.cache_dir, directory=args.search_geometry_dir)
+    scoring = UmaScoring(dataset)
+    check_dataset(parser, scoring, args.dataset)
+    search = (BenchmarkSearchFrames(args.cache_dir, directory=args.search_geometry_dir)
+              if args.search_geometry_dir else None)
     results = list(summarize(
-        UmaScoring(dataset), load_attempts(dataset, args.attempts), search, args.workers,
-        group_outside=not args.recall_only,
+        scoring, load_attempts(dataset, args.attempts), search, args.workers,
+        group_outside=not args.recall_only, dataset=args.dataset, archive=args.geometry_zip,
     ))
+    if not results:
+        parser.error(f"no confident seeds with prefilled attempts in {args.dataset}; use saddlebench score --dataset")
     with args.output.open("x", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(results[0]))
         writer.writeheader()
@@ -138,7 +189,7 @@ def main(argv):
     for row in results:
         for column in ("attempts", "converged", "predictions_scored", "converged_without_exported_geometry"):
             total[column] += row[column]
-    print(f"UMA {REVISION}, Search frames {SEARCH_REVISION}: {dict(total)}, "
+    print(f"UMA {REVISION}, {args.dataset}, {results[0]['geometry_source']}: {dict(total)}, "
           f"{len(results)} structure-method rows; "
           f"scorer elapsed time {perf_counter() - start:.2f} s; {args.output}")
     return 0

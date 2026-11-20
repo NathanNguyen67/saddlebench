@@ -15,6 +15,12 @@ def main(argv=None):
             return previous(args[1:])
         from saddlebench.uma_cli import main as latest
         return latest(args[1:])
+    if args and args[0]=='cases':
+        from saddlebench.uma_catalog import main_cases
+        return main_cases(args[1:])
+    if args and args[0]=='seed':
+        from saddlebench.uma_catalog import main_seed
+        return main_seed(args[1:])
     if args and args[0]=='baseline':
         from saddlebench.uma_baseline import main as baseline
         return baseline(args[1:])
@@ -31,8 +37,10 @@ def main(argv=None):
         from saddlebench.coverage_leaderboard import main as render
         return render(args[1:])
     if not args or args[0] in ('-h','--help'):
-        print('usage: saddlebench {score|baseline|coverage-score|provisional-score|legacy-score|render} [options]')
+        print('usage: saddlebench {score|cases|seed|baseline|coverage-score|provisional-score|legacy-score|render} [options]')
         print('  score               DEFAULT: public UMA per-seed recall at 0.20/0.10/0.05 A')
+        print('  cases               List confident UMA seeds by dataset')
+        print('  seed                Download ASE starting minima')
         print('  baseline            Reproduce the public UMA benchmark')
         print('  coverage-score      Archived HF coverage leaderboard')
         print('  provisional-score   Previous HF provisional score and diagnostic counts')

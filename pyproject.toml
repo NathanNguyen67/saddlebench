@@ -11,5 +11,7 @@ dependencies = ["numpy>=1.23", "ase>=3.22", "huggingface_hub>=0.25", "pyarrow>=1
 saddlebench = "saddlebench.public_entrypoint:main"
 [tool.setuptools.packages.find]
 include = ["saddlebench*"]
+[tool.setuptools.package-data]
+"saddlebench.reference" = ["uma_aligned.csv"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
