@@ -218,3 +218,48 @@ def test_recall_only_retains_unmatched_frame_count(export):
     assert result["recall"]["0.20"] == 1
     assert result["outside_reference_predictions"] == 2
     assert result["outside_reference_groups"] is None
+
+
+@pytest.mark.parametrize("pbc", [[False, False, False], [True, True, False], [True, True, True]])
+def test_profile_index_matches_exhaustive_under_drift_and_wrapping(pbc):
+    import numpy as np
+
+    cell = np.array([[20., 0., 0.], [3., 20., 0.], [1., 2., 20.]])
+    atoms = Atoms("H8", positions=[[j*.75, 0., 0.] for j in range(8)], cell=cell, pbc=pbc)
+    references = {}
+    for i in range(24):
+        ref = atoms.copy()
+        ref.positions[-1, 1] += i * .17
+        references[str(i)] = geometry(ref, arrays=True)
+    scorer = SeedScorer(references)
+    assert scorer.index is not None
+    for movement in (.05, .19, .25, 14.):
+        query = atoms.copy()
+        query.positions += [3., -2.5, .5]
+        if pbc[1]:
+            query.positions[::2] += cell[1]
+        query.positions[-1, 1] += movement
+        prediction = geometry(query, arrays=True)
+        exhaustive = scorer.matcher.match({"geometry": prediction})["matches"]
+        assert scorer.nearest(prediction) == (exhaustive[0] if exhaustive else None)
+
+    query.cell[0, 0] += .01
+    prediction = geometry(query, arrays=True)
+    assert scorer.index.candidates(prediction, .20) is None
+    exhaustive = scorer.matcher.match({"geometry": prediction})["matches"]
+    assert scorer.nearest(prediction) == (exhaustive[0] if exhaustive else None)
+
+
+def test_decoded_reference_cache_reuses_verified_geometry(export, monkeypatch):
+    from saddlebench.scoring.uma import UmaScoring
+
+    directory = export.parent / "cache"
+    original = UmaScoring(UmaDataset(directory)).structure("parent", ["seed"])["seed"]
+
+    def unavailable(*args):
+        raise AssertionError("Warm scoring should reuse the decoded geometry")
+
+    monkeypatch.setattr(UmaDataset, "frames", unavailable)
+    warm = UmaScoring(UmaDataset(directory)).structure("parent", ["seed"])["seed"]
+    prediction = {"geometry": original.records[0]["geometry"]}
+    assert original.nearest(prediction["geometry"]) == warm.nearest(prediction["geometry"])

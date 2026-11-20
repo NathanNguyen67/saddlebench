@@ -11,7 +11,7 @@ from time import perf_counter
 import pyarrow.parquet as pq
 
 from saddlebench.reference.uma import REVISION, SEARCH_REVISION, BenchmarkSearchFrames, UmaDataset
-from saddlebench.scoring.uma import UmaScoring, geometry
+from saddlebench.scoring.uma import UmaScoring
 
 COHORT = "bench_20261118"
 METHODS = ("sella_prfo_diag4_abs01", "tsbfgs_dimer_rot4_frot01_r23_allprobes")
@@ -66,11 +66,7 @@ def score_structure(item, *, scoring, search, group_outside):
     parent, submissions = item
     seeds = sorted({mid for mid, _ in submissions})
     expected = {row["seq"] for group in submissions.values() for row in group if row["converged"]}
-    frames = {}
-    for seq, atoms in search.frames(parent):
-        if seq in frames:
-            raise ValueError(f"Duplicate Search geometry for attempt {seq}")
-        frames[seq] = geometry(atoms, arrays=True)
+    frames = search.geometries(parent)
     if frames.keys() != expected:
         raise ValueError(f"Search geometry coverage differs from converged attempt rows for {parent}")
     scorers = scoring.structure(parent, seeds)

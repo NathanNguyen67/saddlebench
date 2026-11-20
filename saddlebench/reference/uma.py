@@ -11,6 +11,8 @@ import pyarrow.parquet as pq
 from ase.io.trajectory import Trajectory
 from huggingface_hub import hf_hub_download
 
+from saddlebench.reference import array_cache
+
 REPO = "traingletrain/saddlebench-uma"
 REVISION = "acdac15b98282a9137a76c060913fcc0ce08462b"
 SEARCH_REPO = "traingletrain/saddlebench-uma-benchmark-search"
@@ -88,6 +90,20 @@ class BenchmarkSearchFrames:
         with Trajectory(BytesIO(gzip.decompress(compressed))) as shard:
             for atoms in shard:
                 yield atoms.info["saddlebench_attempt_seq"], atoms
+
+    def geometries(self, parent):
+        info = self.manifest["structures"][parent]
+        path = array_cache.cache_path(self.cache_dir, "search", info["sha256"], parent)
+        cached = array_cache.load(path)
+        if cached is not None:
+            return cached[0]
+        frames = {}
+        for seq, atoms in self.frames(parent):
+            if seq in frames:
+                raise ValueError(f"Duplicate Search geometry for attempt {seq}")
+            frames[seq] = array_cache.geometry(atoms, arrays=True)
+        array_cache.save(path, frames)
+        return frames
 
 
 def select_endpoint_pair(pairs, minimum_id):

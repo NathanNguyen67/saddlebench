@@ -1,29 +1,23 @@
 """Score ASE saddle predictions against the published per-seed reference."""
 from collections import defaultdict
+from hashlib import sha256
+import json
 from types import SimpleNamespace
 
 import numpy as np
 
 from saddlebench.matching.geometry import BatchedAnchorFilter, prepare_array_geometry
 from saddlebench.matching.matcher import PreparedReferenceMatcher
+from saddlebench.matching.profile_index import FIELDS, ProfileIndex
+from saddlebench.reference import array_cache
+from saddlebench.reference.array_cache import geometry
 
 THRESHOLDS = (0.20, 0.10, 0.05)
 GEOMETRY_COLUMNS = ["geometry_path", "geometry_index"]
 
 
-def geometry(atoms, *, arrays=False):
-    return {
-        "numbers": atoms.numbers.tolist(),
-        "pbc": atoms.pbc.tolist(),
-        "cell_angstrom": atoms.cell.array.copy() if arrays else atoms.cell.array.tolist(),
-        "positions_angstrom": atoms.get_positions() if arrays else atoms.positions.tolist(),
-        "fixed_indices": [],
-        "constraints_known": False,
-    }
-
-
 class SeedScorer:
-    def __init__(self, reference):
+    def __init__(self, reference, profile=None):
         self.records = [
             {"reference_id": ident, "identity_id": ident, "geometry": geom}
             for ident, geom in sorted(reference.items())
@@ -31,14 +25,27 @@ class SeedScorer:
         self.matcher = PreparedReferenceMatcher(
             SimpleNamespace(records=self.records, by_numbers=None), prepare=prepare_array_geometry,
         )
-        self.anchors = BatchedAnchorFilter(self.records, all_atoms=True)
+        self.anchors = None
+        if profile and set(profile) == set(FIELDS):
+            first = self.records[0]["geometry"]
+            self.index = ProfileIndex(first["numbers"], first["pbc"], first["cell_angstrom"], profile)
+        else:
+            self.index = ProfileIndex.build([record["geometry"] for record in self.records])
 
     def nearest(self, prediction):
-        bounds = self.anchors.lower_bounds(prediction, THRESHOLDS[0])
-        candidates = np.flatnonzero(bounds <= THRESHOLDS[0])
-        ordered = candidates[np.argsort(bounds[candidates], kind="stable")]
+        ranked = self.index.candidates(prediction, THRESHOLDS[0]) if self.index is not None else None
+        if ranked is None:
+            if self.anchors is None:
+                self.anchors = BatchedAnchorFilter(self.records, all_atoms=True)
+            bounds = self.anchors.lower_bounds(prediction, THRESHOLDS[0])
+            candidates = np.flatnonzero(bounds <= THRESHOLDS[0])
+            bounds = bounds[candidates]
+        else:
+            candidates, bounds = ranked
+        ordered = np.argsort(bounds, kind="stable")
         matches = self.matcher.match(
-            {"geometry": prediction}, ordered_bounds=((bounds[i], self.records[i]) for i in ordered),
+            {"geometry": prediction},
+            ordered_bounds=((bounds[i], self.records[candidates[i]]) for i in ordered),
         )["matches"]
         return matches[0] if matches else None
 
@@ -101,6 +108,7 @@ def distinct_outside(predictions):
 class UmaScoring:
     def __init__(self, dataset):
         self.dataset = dataset
+        self.revision_digest = sha256(json.dumps(dataset.manifest, sort_keys=True).encode()).hexdigest()
         self.seeds = {row["minimum_id"]: row for row in dataset.table("seeds").to_pylist()}
         self.references = defaultdict(dict)
         for row in dataset.table("reference").to_pylist():
@@ -108,7 +116,21 @@ class UmaScoring:
                 self.references[row["minimum_id"]][row["saddle_id"]] = row
 
     def structure(self, parent, seeds):
-        references = set().union(*(self.references[mid] for mid in seeds))
+        scorers, pending = {}, {}
+        for mid in seeds:
+            path = array_cache.cache_path(self.dataset.cache_dir, "reference", self.revision_digest, mid)
+            ids = sorted(self.references[mid])
+            cached = array_cache.load(path, ids) if ids else None
+            if cached is not None:
+                scorers[mid] = SeedScorer(*cached)
+            elif ids:
+                pending[mid] = path
+            else:
+                scorers[mid] = SeedScorer({})
+        if not pending:
+            return scorers
+
+        references = set().union(*(self.references[mid] for mid in pending))
         saddles = {
             row["saddle_id"]: row
             for row in self.dataset.table(
@@ -120,7 +142,10 @@ class UmaScoring:
         missing = references.difference(saddles)
         if missing:
             raise ValueError(f"Missing published reference geometry links for {sorted(missing)}")
-        records = {mid: self.seeds[mid] for mid in seeds}
-        records.update(saddles)
-        frames = {ident: geometry(atoms, arrays=True) for ident, atoms in self.dataset.frames(records)}
-        return {mid: SeedScorer({sid: frames[sid] for sid in self.references[mid]}) for mid in seeds}
+        frames = {ident: geometry(atoms, arrays=True) for ident, atoms in self.dataset.frames(saddles)}
+        for mid, path in pending.items():
+            reference = {sid: frames[sid] for sid in sorted(self.references[mid])}
+            scorer = SeedScorer(reference)
+            array_cache.save(path, reference, scorer.index.arrays if scorer.index else None)
+            scorers[mid] = scorer
+        return scorers
