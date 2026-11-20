@@ -41,25 +41,37 @@ def _certified_skew_mic(arr,basis,*,prepared=None):
             return None
         center=np.rint(fractional)
         residual=arr-center@basis.T
+        epsilon=1e-9*(1.+scale+np.max(np.abs(arr)))
+        squared=np.einsum('ij,ij->i',residual,residual)
+        norm=np.sqrt(squared)
+        # Every nonzero lattice shift has length >= sigma. A residual inside
+        # half that bound is closer to the rounded image than any alternative.
+        certain=((norm+epsilon < 0.5*sigma)
+                 & (sigma*(sigma-2*norm) > 1e-10*(1.+squared)))
+        if np.all(certain):
+            return residual
+        unresolved=residual[~certain] if np.any(certain) else residual
+        uncertain_count=len(unresolved)
         for radius in (1,2,3):
             shifts=_image_shifts(basis.shape[1],radius)
-            if len(arr)*len(shifts)>150000:return None
+            if uncertain_count*len(shifts)>150000:return None
             images=(shifts@basis.T if prepared is None
                     else prepared.image_offsets[radius-1])
-            differences=residual[:,None,:]-images[None,:,:]
+            differences=unresolved[:,None,:]-images[None,:,:]
             norms_sq=np.einsum('ijk,ijk->ij',differences,differences)
             best_index=np.argmin(norms_sq,axis=1)
-            best_sq=norms_sq[np.arange(len(arr)),best_index]
+            rows=np.arange(uncertain_count)
+            best_sq=norms_sq[rows,best_index]
             if not np.isfinite(best_sq).all():return None
             lower=sigma*(radius+0.5)
-            epsilon=1e-9*(1.+scale+np.max(np.abs(arr)))
             if not np.all(np.sqrt(best_sq)+epsilon < lower):
                 continue
             two_smallest=np.partition(norms_sq,1,axis=1)[:,:2]
             if np.any(two_smallest[:,1]-two_smallest[:,0] <
                       1e-10*(1.+two_smallest[:,0])):
                 return None
-            return differences[np.arange(len(arr)),best_index]
+            residual[~certain]=differences[rows,best_index]
+            return residual
     except (np.linalg.LinAlgError,ValueError,FloatingPointError):
         pass
     return None
@@ -343,12 +355,13 @@ class BatchedAnchorFilter:
     The reference's cell is used for compatibility, but *the query cell* is
     used for MIC, exactly as in cannot_match_by_anchor(a, b, ...).
 
-    Memory: O(reference_count * sampled_atoms) persistent and
-    O(chunk_size * sampled_atoms) scratch, not O(all_reference * all_atoms).
+    Memory: O(reference_count * selected_atoms) persistent and
+    O(chunk_size * selected_atoms) scratch.
     No result or reference identity is reordered or collapsed.
     """
 
-    def __init__(self, entries, geometry_of=lambda item: item.get('geometry', item), chunk_size=128):
+    def __init__(self, entries, geometry_of=lambda item: item.get('geometry', item), chunk_size=128, *, all_atoms=False):
+        self.all_atoms = all_atoms
         self.size = len(entries)
         self.chunk_size = max(1, int(chunk_size))
         buckets = {}
@@ -364,7 +377,7 @@ class BatchedAnchorFilter:
                         or cell.shape != (3, 3) or not np.isfinite(positions).all()
                         or not np.isfinite(cell).all()):
                     continue
-                selected = sorted({0, n//4, n//2, (3*n)//4, n-1})
+                selected = self._selected(n)
                 key = (numbers, pbc)
                 buckets.setdefault(key, []).append((index, positions[selected], cell))
             except (KeyError, TypeError, ValueError, OverflowError, IndexError):
@@ -377,6 +390,9 @@ class BatchedAnchorFilter:
                 np.stack([d[1] for d in data]),
                 np.stack([d[2] for d in data]),
             )
+
+    def _selected(self, n):
+        return slice(None) if self.all_atoms else sorted({0, n//4, n//2, (3*n)//4, n-1})
 
     def possible(self, query, maxdev):
         """Return ordered True=must-check mask, with no false match omissions."""
@@ -394,8 +410,7 @@ class BatchedAnchorFilter:
                     or cell.shape != (3, 3) or not np.isfinite(query_pos).all()
                     or not np.isfinite(cell).all()):
                 return keep
-            selected = sorted({0, n//4, n//2, (3*n)//4, n-1})
-            anchor = query_pos[selected]
+            anchor = query_pos[self._selected(n)]
             indices, positions, cells = bucket
             periodic = np.asarray(pbc, dtype=bool)
             if periodic.any():

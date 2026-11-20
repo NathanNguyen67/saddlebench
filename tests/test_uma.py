@@ -140,3 +140,20 @@ def test_benchmark_search_geometry_uses_attempt_key(tmp_path):
     [(seq, prediction)] = BenchmarkSearchFrames(directory=tmp_path).frames("parent")
     assert seq == 42
     assert prediction.positions.tolist() == [[0.125, 0.0, 0.0]]
+
+
+def test_all_atom_screen_checks_atoms_outside_the_default_sample():
+    from saddlebench.matching.geometry import BatchedAnchorFilter
+
+    reference = Atoms("H10", positions=[[i, 0, 0] for i in range(10)])
+    screening = BatchedAnchorFilter([geometry(reference)], all_atoms=True)
+
+    prediction = reference.copy()
+    prediction.positions[4, 1] = 0.55
+    assert not screening.possible(geometry(prediction), 0.2)[0]
+
+    prediction.positions[4, 1] = 0.2
+    assert screening.possible(geometry(prediction), 0.2)[0]
+    assert SeedScorer({"ref": geometry(reference)}).score(
+        [geometry(prediction)]
+    )["matched_reference_groups"]["0.20"] == 1

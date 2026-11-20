@@ -30,7 +30,7 @@ class SeedScorer:
             for ident, geom in sorted(reference.items())
         ]
         self.matcher = PreparedReferenceMatcher(SimpleNamespace(records=self.records, by_numbers=None))
-        self.anchors = BatchedAnchorFilter(self.records)
+        self.anchors = BatchedAnchorFilter(self.records, all_atoms=True)
 
     def nearest(self, prediction):
         candidates = compress(self.records, self.anchors.possible(prediction, THRESHOLDS[0]))
