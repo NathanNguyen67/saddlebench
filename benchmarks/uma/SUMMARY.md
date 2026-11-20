@@ -10,3 +10,5 @@ The bundled attempt table covers 36 seeds. Twenty pass the published confidence 
 The [public results CSV](baseline.csv) has 40 structure–method rows. The public run uses the representative geometry linked by the export and keeps the 2,349 converged attempts without a public representative in convergence and cost totals. With the optional exact Search geometry ZIP, all 19,035 converged frames can be scored. The two runs use the same confident reference and alignment exclusions. The CSV identifies the prediction geometry source.
 
 The data come from the pinned UMA revision `acdac15b98282a9137a76c060913fcc0ce08462b`. See the [README](../../README.md) for the exact public commands, dataset selection, and instructions for scoring the ZIP. These attempts helped build the answer key, so their recall can be optimistic for a method evaluated independently.
+
+A clean Python 3.11 installation and empty Hugging Face cache reproduced the public CSV byte for byte. The baseline command took about 7.5 seconds with four workers on the test node, including its remaining downloads after the quick example. The combined cache used about 330 MiB.

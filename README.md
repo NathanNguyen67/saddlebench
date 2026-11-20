@@ -84,7 +84,7 @@ These attempts helped build the answer key, so their recall can be optimistic fo
 
 ## Cache and reference limitations
 
-SaddleBench downloads only the structure trajectories used by the command and verifies source data against the pinned manifest. It caches decoded references and indexes in `saddlebench-uma-arrays` in the Hugging Face Hub cache. Use `--cache-dir` to choose a local directory. A full public baseline needs roughly 1 GiB of cache space. Keep `OPENBLAS_NUM_THREADS=1` when using multiple workers.
+SaddleBench downloads only the structure trajectories used by the command and verifies source data against the pinned manifest. It caches decoded references and indexes in `saddlebench-uma-arrays` in the Hugging Face Hub cache. Use `--cache-dir` to choose a local directory. The documented public literature run used about 330 MiB of cache space. Scoring other datasets adds their structure shards as needed. Keep `OPENBLAS_NUM_THREADS=1` when using multiple workers.
 
 Campaign DoubleMin endpoints are unverified. At the production 0.25 Å push, LBFGS sometimes stopped at a neighboring first-order saddle. Near-degenerate or symmetry-equivalent minima can also have different identities, so a saddle can connect to a nearby minimum and remain outside the published seed-specific reference.
 
