@@ -31,26 +31,19 @@ class SeedScorer:
         ]
         self.matcher = PreparedReferenceMatcher(SimpleNamespace(records=self.records, by_numbers=None))
         self.anchors = BatchedAnchorFilter(self.records)
-        self.cached = {}
 
-    def matches(self, prediction, geometry_key):
-        if geometry_key is not None and geometry_key in self.cached:
-            return self.cached[geometry_key]
+    def nearest(self, prediction):
         candidates = compress(self.records, self.anchors.possible(prediction, THRESHOLDS[0]))
         matches = self.matcher.match({"geometry": prediction}, candidates=candidates)["matches"]
-        nearest = matches[0] if matches else None
-        if geometry_key is not None:
-            self.cached[geometry_key] = nearest
-        return nearest
+        return matches[0] if matches else None
 
     def score(self, predictions):
-        """Predictions are (geometry key or None, geometry) in submission order."""
         hits = {threshold: set() for threshold in THRESHOLDS}
         outside = []
         count = 0
-        for key, prediction in predictions:
+        for prediction in predictions:
             count += 1
-            nearest = self.matches(prediction, key)
+            nearest = self.nearest(prediction)
             if nearest is None:
                 outside.append(prediction)
                 continue
@@ -105,16 +98,15 @@ class UmaScoring:
             if row["barrier_eV"] < 1.0:
                 self.references[row["minimum_id"]][row["saddle_id"]] = row
 
-    def structure(self, parent, seeds, extra_ids=()):
+    def structure(self, parent, seeds):
         references = set().union(*(self.references[mid] for mid in seeds))
-        needed = references.union(extra_ids)
         saddles = {
             row["saddle_id"]: row
             for row in self.dataset.table(
                 "saddles", columns=["saddle_id", *GEOMETRY_COLUMNS],
                 filters=[("parent_id", "=", parent)],
             ).to_pylist()
-            if row["saddle_id"] in needed
+            if row["saddle_id"] in references
         }
         missing = references.difference(saddles)
         if missing:
@@ -122,6 +114,4 @@ class UmaScoring:
         records = {mid: self.seeds[mid] for mid in seeds}
         records.update(saddles)
         frames = {ident: geometry(atoms) for ident, atoms in self.dataset.frames(records)}
-        scorers = {mid: SeedScorer({sid: frames[sid] for sid in self.references[mid]})
-                   for mid in seeds}
-        return frames, scorers
+        return {mid: SeedScorer({sid: frames[sid] for sid in self.references[mid]}) for mid in seeds}

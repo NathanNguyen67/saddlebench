@@ -7,8 +7,8 @@ from time import perf_counter
 
 import pyarrow.parquet as pq
 
-from saddlebench.reference.uma import REVISION, UmaDataset
-from saddlebench.scoring.uma import UmaScoring
+from saddlebench.reference.uma import REVISION, SEARCH_REVISION, BenchmarkSearchFrames, UmaDataset
+from saddlebench.scoring.uma import UmaScoring, geometry
 
 COHORT = "bench_20261118"
 METHODS = ("sella_prfo_diag4_abs01", "tsbfgs_dimer_rot4_frot01_r23_allprobes")
@@ -21,7 +21,7 @@ def load_attempts(dataset, path=None):
         return pq.read_table(handle)
 
 
-def summarize(scoring, attempts):
+def summarize(scoring, attempts, search):
     rows = attempts.to_pylist()
     groups = Counter((row["minimum_id"], row["method_id"]) for row in rows)
     if (len(rows) != 36000 or len({row["seq"] for row in rows}) != 36000
@@ -39,9 +39,15 @@ def summarize(scoring, attempts):
 
     for parent, submissions in sorted(by_structure.items()):
         seeds = sorted({mid for mid, _ in submissions})
-        ids = {row["saddle_id"] for group in submissions.values()
-               for row in group if row["converged"] and row["saddle_id"] is not None}
-        frames, scorers = scoring.structure(parent, seeds, ids)
+        expected = {row["seq"] for group in submissions.values() for row in group if row["converged"]}
+        frames = {}
+        for seq, atoms in search.frames(parent):
+            if seq in frames:
+                raise ValueError(f"Duplicate Search geometry for attempt {seq}")
+            frames[seq] = geometry(atoms)
+        if frames.keys() != expected:
+            raise ValueError(f"Search geometry coverage differs from converged attempt rows for {parent}")
+        scorers = scoring.structure(parent, seeds)
         totals = defaultdict(Counter)
         for (mid, method), group in submissions.items():
             counts = totals[method]
@@ -50,8 +56,7 @@ def summarize(scoring, attempts):
             converged = [row for row in group if row["converged"]]
             counts["converged"] += len(converged)
             report = scorers[mid].score(
-                (sid, frames[sid]) for row in converged
-                if (sid := row["saddle_id"]) in frames
+                frames[row["seq"]] for row in converged
             )
             counts["predictions_scored"] += report["predictions_scored"]
             counts["eligible_reference_groups"] += report["eligible_reference_groups"]
@@ -85,10 +90,12 @@ def main(argv):
     parser.add_argument("--attempts", type=Path, help="Bundled baseline Parquet table (default fetches pinned export)")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--cache-dir", type=Path)
+    parser.add_argument("--search-geometry-dir", type=Path, help="Use a local copy of the exact Search supplement")
     args = parser.parse_args(argv)
     start = perf_counter()
     dataset = UmaDataset(args.cache_dir)
-    results = list(summarize(UmaScoring(dataset), load_attempts(dataset, args.attempts)))
+    search = BenchmarkSearchFrames(args.cache_dir, directory=args.search_geometry_dir)
+    results = list(summarize(UmaScoring(dataset), load_attempts(dataset, args.attempts), search))
     with args.output.open("x", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(results[0]))
         writer.writeheader()
@@ -97,6 +104,7 @@ def main(argv):
     for row in results:
         for column in ("attempts", "converged", "predictions_scored", "converged_without_exported_geometry"):
             total[column] += row[column]
-    print(f"UMA {REVISION}: {dict(total)}, {len(results)} structure-method rows; "
+    print(f"UMA {REVISION}, Search frames {SEARCH_REVISION}: {dict(total)}, "
+          f"{len(results)} structure-method rows; "
           f"scorer elapsed time {perf_counter() - start:.2f} s; {args.output}")
     return 0

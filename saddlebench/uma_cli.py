@@ -29,9 +29,9 @@ def main(argv):
     seed = scoring.seeds[minimum_id]
     if args.confident_only and not seed["confident"]:
         parser.error(f"case {args.case_id} did not reach the published confidence threshold")
-    _, scorers = scoring.structure(parent, [minimum_id])
+    scorers = scoring.structure(parent, [minimum_id])
     report = scorers[minimum_id].score(
-        (None, geometry(atoms)) for atoms in iread(args.submission, index=":")
+        geometry(atoms) for atoms in iread(args.submission, index=":")
     )
     matched = set(report["matched_saddle_ids"])
     pairs = defaultdict(list)

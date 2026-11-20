@@ -117,5 +117,26 @@ def test_inclusive_maxdev_cutoff():
     for distance, matches in [(0.2, 1), (0.20000001, 0)]:
         prediction = reference.copy()
         prediction.positions[-1, 0] += distance
-        result = scorer.score([(None, geometry(prediction))])
+        result = scorer.score([geometry(prediction)])
         assert result["matched_reference_groups"]["0.20"] == matches
+
+
+def test_benchmark_search_geometry_uses_attempt_key(tmp_path):
+    from gzip import compress
+    from saddlebench.reference.uma import BenchmarkSearchFrames
+
+    atoms = Atoms("H", positions=[[0.125, 0, 0]])
+    atoms.info["saddlebench_attempt_seq"] = 42
+    native = tmp_path / "local.traj"
+    write(native, atoms)
+    shard = tmp_path / "search0001.traj.gz"
+    shard.write_bytes(compress(native.read_bytes()))
+    manifest = {"source_hf_revision": REVISION, "structures": {
+        "parent": {"shard": shard.name, "frames": 1,
+                   "sha256": hashlib.sha256(shard.read_bytes()).hexdigest()},
+    }}
+    (tmp_path / "MANIFEST.json").write_text(json.dumps(manifest))
+
+    [(seq, prediction)] = BenchmarkSearchFrames(directory=tmp_path).frames("parent")
+    assert seq == 42
+    assert prediction.positions.tolist() == [[0.125, 0.0, 0.0]]

@@ -1,5 +1,7 @@
 """Read the pinned public SaddleBench-UMA export."""
 import csv
+import gzip
+from io import BytesIO
 import hashlib
 import json
 from collections import defaultdict
@@ -11,6 +13,8 @@ from huggingface_hub import hf_hub_download
 
 REPO = "traingletrain/saddlebench-uma"
 REVISION = "acdac15b98282a9137a76c060913fcc0ce08462b"
+SEARCH_REPO = "traingletrain/saddlebench-uma-benchmark-search"
+SEARCH_REVISION = None
 
 
 class UmaDataset:
@@ -28,11 +32,7 @@ class UmaDataset:
     def file(self, name):
         if name not in self.verified:
             path = self.download(name)
-            with path.open("rb") as handle:
-                actual = hashlib.file_digest(handle, "sha256").hexdigest() if hasattr(
-                    hashlib, "file_digest") else _sha256(handle)
-            if actual != self.manifest["sha256"][name]:
-                raise ValueError(f"UMA manifest checksum mismatch for {name}: {path}")
+            verify_file(path, self.manifest["sha256"][name], name)
             self.verified[name] = path
         return self.verified[name]
 
@@ -52,11 +52,41 @@ class UmaDataset:
                     yield ident, atoms
 
 
-def _sha256(handle):
+def verify_file(path, expected, name):
     digest = hashlib.sha256()
-    for block in iter(lambda: handle.read(1024 * 1024), b""):
-        digest.update(block)
-    return digest.hexdigest()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    if digest.hexdigest() != expected:
+        raise ValueError(f"UMA manifest checksum mismatch for {name}: {path}")
+
+
+class BenchmarkSearchFrames:
+    """Exact Search geometries published separately from the answer key."""
+    def __init__(self, cache_dir=None, *, directory=None):
+        self.cache_dir = cache_dir
+        self.directory = directory
+        self.manifest = json.loads(self.download("MANIFEST.json").read_text())
+        if self.manifest["source_hf_revision"] != REVISION:
+            raise ValueError("Benchmark Search supplement targets a different UMA revision")
+
+    def download(self, name):
+        if self.directory is not None:
+            return self.directory / name
+        if SEARCH_REVISION is None:
+            raise ValueError("Benchmark Search supplement awaiting publication. Use --search-geometry-dir.")
+        return Path(hf_hub_download(SEARCH_REPO, name, repo_type="dataset",
+                                    revision=SEARCH_REVISION, cache_dir=self.cache_dir))
+
+    def frames(self, parent):
+        info = self.manifest["structures"][parent]
+        name = info["shard"]
+        path = self.download(name)
+        verify_file(path, info["sha256"], name)
+        with gzip.open(path, "rb") as compressed:
+            with Trajectory(BytesIO(compressed.read())) as shard:
+                for atoms in shard:
+                    yield atoms.info["saddlebench_attempt_seq"], atoms
 
 
 def select_endpoint_pair(pairs, minimum_id):
