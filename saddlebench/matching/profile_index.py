@@ -1,9 +1,27 @@
 """Range lookup on translation-invariant, continuous atom profiles."""
 import numpy as np
 
+from saddlebench.matching.geometry import _anchor_indices
+
 # Allow for cancellation in unwrapped coordinates and roundoff at cutoffs.
 SLACK = 1e-6
 FIELDS = ("projection", "periods", "weights", "profiles", "features", "keys", "rows")
+
+
+def _profile_bound(difference, periods, weights, dim, radius):
+    difference[..., :dim] -= np.rint(difference[..., :dim] / periods[:dim]) * periods[:dim]
+    # The minimum singular value bounds the periodic contribution.
+    # The orthonormal normal-space coordinates give the remainder.
+    weighted = difference * weights
+    squared = np.einsum("ijk,ijk->ij", weighted, weighted).max(axis=1)
+    bound = np.maximum(np.sqrt(squared), np.abs(difference).max(axis=(1, 2)))
+    # A possible match has a unique wrap along these axes. The span
+    # bounds the separation of any two atoms along the same axis.
+    unique_wrap = (periods == 0) | (periods > 2 * radius)
+    if unique_wrap.any():
+        span = np.ptp(difference, axis=1)[:, unique_wrap].max(axis=1)
+        bound = np.maximum(bound, span)
+    return bound
 
 
 class ProfileIndex:
@@ -15,6 +33,8 @@ class ProfileIndex:
         self.feature_periods = arrays["periods"][arrays["features"] % 3]
         profiles = arrays["profiles"]
         self.short_profiles = np.ascontiguousarray(profiles.reshape(len(profiles), -1)[:, arrays["features"]])
+        self.anchors = _anchor_indices(len(numbers))
+        self.anchor_profiles = np.ascontiguousarray(profiles[:, self.anchors])
 
     @classmethod
     def build(cls, geometries):
@@ -107,19 +127,16 @@ class ProfileIndex:
             if not len(closest):
                 return closest, np.empty(0)
 
+        # The lookup features can miss useful atoms, especially on large
+        # slabs. Test the original small atom set before reading all profiles.
+        weights = data["weights"]
+        if len(closest) > 8 and len(self.anchors) < len(profile):
+            probe = self.anchor_profiles[closest] - profile[self.anchors]
+            closest = closest[_profile_bound(probe, periods, weights, dim, radius) <= radius]
+            if not len(closest):
+                return closest, np.empty(0)
+
         difference = data["profiles"][closest] - profile
-        difference[..., :dim] -= np.rint(difference[..., :dim] / periods[:dim]) * periods[:dim]
-        # The minimum singular value bounds the periodic contribution.
-        # The orthonormal normal-space coordinates give the remainder.
-        weighted = difference * data["weights"]
-        squared = np.einsum("ijk,ijk->ij", weighted, weighted).max(axis=1)
-        bound = np.maximum(np.sqrt(squared), np.abs(difference).max(axis=(1, 2)))
-        # If the full allowed range fits inside half a period, each profile
-        # coordinate has a unique wrap for a possible match. Its span compares
-        # every atom to every other atom along that axis in linear work.
-        unique_wrap = (periods == 0) | (periods > 2 * radius)
-        if unique_wrap.any():
-            span = np.ptp(difference, axis=1)[:, unique_wrap].max(axis=1)
-            bound = np.maximum(bound, span)
+        bound = _profile_bound(difference, periods, weights, dim, radius)
         keep = bound <= radius
         return closest[keep], (np.maximum(0., bound[keep] - SLACK) / 2.)
