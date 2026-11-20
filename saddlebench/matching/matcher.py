@@ -28,7 +28,7 @@ class PreparedReferenceMatcher:
         self.prepared = {}
         self.prepare = prepare_geometry
 
-    def match(self, submission, *, candidates=None):
+    def match(self, submission, *, candidates=None, first=False):
         from saddlebench.matching.geometry import core_drift_maxdev_prepared
         matches = []
         incompatible = set()
@@ -60,6 +60,8 @@ class PreparedReferenceMatcher:
                 matches.append({'reference_id': r['reference_id'],
                                 'identity_id': r['identity_id'],
                                 'maxdev_angstrom': distance})
+                if first:
+                    break
         matches.sort(key=lambda m: (m['maxdev_angstrom'], m['reference_id']))
         identities = {m['identity_id'] for m in matches}
         state = ('NOT_IN_REFERENCE' if not matches else

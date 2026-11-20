@@ -157,3 +157,20 @@ def test_all_atom_screen_checks_atoms_outside_the_default_sample():
     assert SeedScorer({"ref": geometry(reference)}).score(
         [geometry(prediction)]
     )["matched_reference_groups"]["0.20"] == 1
+
+
+def test_staged_screen_checks_atoms_outside_its_first_pass():
+    from saddlebench.matching.geometry import BatchedAnchorFilter
+
+    reference = Atoms("H20", positions=[[i, 0, 0] for i in range(20)])
+    references = []
+    for amount in range(20):
+        configuration = reference.copy()
+        configuration.positions[5:, 1] += amount * 0.01
+        references.append(geometry(configuration))
+    screening = BatchedAnchorFilter(references, all_atoms=True)
+    prediction = reference.copy()
+    prediction.positions[2, 1] = 0.55
+    assert not screening.possible(geometry(prediction), 0.2).any()
+    prediction.positions[2, 1] = 0.19
+    assert screening.possible(geometry(prediction), 0.2)[0]

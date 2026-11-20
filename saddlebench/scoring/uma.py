@@ -84,7 +84,7 @@ def distinct_outside(predictions):
         if representatives:
             possible = anchors.possible(prediction, THRESHOLDS[0])
             candidates = (records[j] for j in representatives if possible[j])
-        if not matcher.match({"geometry": prediction}, candidates=candidates)["matches"]:
+        if not matcher.match({"geometry": prediction}, candidates=candidates, first=True)["matches"]:
             representatives.add(i)
     return len(representatives)
 

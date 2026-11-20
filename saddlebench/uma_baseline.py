@@ -2,6 +2,9 @@
 import argparse
 import csv
 from collections import Counter, defaultdict
+from concurrent.futures import ProcessPoolExecutor
+from functools import partial
+from multiprocessing import get_context
 from pathlib import Path
 from time import perf_counter
 
@@ -21,7 +24,7 @@ def load_attempts(dataset, path=None):
         return pq.read_table(handle)
 
 
-def summarize(scoring, attempts, search):
+def summarize(scoring, attempts, search, workers=1):
     rows = attempts.to_pylist()
     groups = Counter((row["minimum_id"], row["method_id"]) for row in rows)
     if (len(rows) != 36000 or len({row["seq"] for row in rows}) != 36000
@@ -37,52 +40,77 @@ def summarize(scoring, attempts, search):
             raise ValueError(f"Unexpected baseline seed or parent: {mid}, {parent}")
         by_structure[parent][mid, row["method_id"]].append(row)
 
-    for parent, submissions in sorted(by_structure.items()):
-        seeds = sorted({mid for mid, _ in submissions})
-        expected = {row["seq"] for group in submissions.values() for row in group if row["converged"]}
-        frames = {}
-        for seq, atoms in search.frames(parent):
-            if seq in frames:
-                raise ValueError(f"Duplicate Search geometry for attempt {seq}")
-            frames[seq] = geometry(atoms)
-        if frames.keys() != expected:
-            raise ValueError(f"Search geometry coverage differs from converged attempt rows for {parent}")
-        scorers = scoring.structure(parent, seeds)
-        totals = defaultdict(Counter)
-        for (mid, method), group in submissions.items():
-            counts = totals[method]
-            counts["seeds"] += 1
-            counts["attempts"] += len(group)
-            converged = [row for row in group if row["converged"]]
-            counts["converged"] += len(converged)
-            report = scorers[mid].score(
-                frames[row["seq"]] for row in converged
-            )
-            counts["predictions_scored"] += report["predictions_scored"]
-            counts["eligible_reference_groups"] += report["eligible_reference_groups"]
-            counts["outside_reference_predictions"] += report["outside_reference_predictions"]
-            counts["outside_reference_groups"] += report["outside_reference_groups"]
-            for threshold, hits in report["matched_reference_groups"].items():
-                counts[f"reference_groups_found_{threshold}_A"] += hits
-            for source, label in (("physical_pes_calls", "physical_pes_calls"),
-                                  ("total_wall_s", "reported_search_wall_s")):
-                values = [row[source] for row in group if row[source] is not None]
-                counts[f"known_{label}"] += sum(values)
-                counts[f"missing_{label}"] += len(group) - len(values)
+    structures = sorted(by_structure.items())
+    score = partial(score_structure, scoring=scoring, search=search)
+    if workers == 1:
+        for item in structures:
+            yield from score(item)
+        return
 
-        for method, counts in sorted(totals.items()):
-            found = counts["reference_groups_found_0.20_A"]
-            eligible = counts["eligible_reference_groups"]
-            yield {
-                "parent_id": parent, "method_id": method, **counts,
-                "convergence_rate": counts["converged"] / counts["attempts"],
-                "converged_without_exported_geometry": counts["converged"] - counts["predictions_scored"],
-                "recall_0.20_A": found / eligible if eligible else None,
-                "physical_pes_calls_per_reference_group_found": (
-                    counts["known_physical_pes_calls"] / found
-                    if found and not counts["missing_physical_pes_calls"] else None
-                ),
-            }
+    # Verify the shared file once. Each worker opens its own Parquet reader,
+    # avoiding a fork of the Arrow thread pool in the parent.
+    scoring.dataset.file("saddles.parquet")
+    # Start structures with the most potential comparisons first.
+    def work(item):
+        return sum(len(scoring.references[mid]) * len(group)
+                   for (mid, _), group in item[1].items())
+
+    with ProcessPoolExecutor(max_workers=workers, mp_context=get_context("spawn")) as pool:
+        jobs = {item[0]: pool.submit(score, item)
+                for item in sorted(structures, key=work, reverse=True)}
+        for parent, _ in structures:
+            yield from jobs[parent].result()
+
+
+def score_structure(item, *, scoring, search):
+    parent, submissions = item
+    seeds = sorted({mid for mid, _ in submissions})
+    expected = {row["seq"] for group in submissions.values() for row in group if row["converged"]}
+    frames = {}
+    for seq, atoms in search.frames(parent):
+        if seq in frames:
+            raise ValueError(f"Duplicate Search geometry for attempt {seq}")
+        frames[seq] = geometry(atoms)
+    if frames.keys() != expected:
+        raise ValueError(f"Search geometry coverage differs from converged attempt rows for {parent}")
+    scorers = scoring.structure(parent, seeds)
+    totals = defaultdict(Counter)
+    for (mid, method), group in submissions.items():
+        counts = totals[method]
+        counts["seeds"] += 1
+        counts["attempts"] += len(group)
+        converged = [row for row in group if row["converged"]]
+        counts["converged"] += len(converged)
+        report = scorers[mid].score(
+            frames[row["seq"]] for row in converged
+        )
+        counts["predictions_scored"] += report["predictions_scored"]
+        counts["eligible_reference_groups"] += report["eligible_reference_groups"]
+        counts["outside_reference_predictions"] += report["outside_reference_predictions"]
+        counts["outside_reference_groups"] += report["outside_reference_groups"]
+        for threshold, hits in report["matched_reference_groups"].items():
+            counts[f"reference_groups_found_{threshold}_A"] += hits
+        for source, label in (("physical_pes_calls", "physical_pes_calls"),
+                              ("total_wall_s", "reported_search_wall_s")):
+            values = [row[source] for row in group if row[source] is not None]
+            counts[f"known_{label}"] += sum(values)
+            counts[f"missing_{label}"] += len(group) - len(values)
+
+    results = []
+    for method, counts in sorted(totals.items()):
+        found = counts["reference_groups_found_0.20_A"]
+        eligible = counts["eligible_reference_groups"]
+        results.append({
+            "parent_id": parent, "method_id": method, **counts,
+            "convergence_rate": counts["converged"] / counts["attempts"],
+            "converged_without_exported_geometry": counts["converged"] - counts["predictions_scored"],
+            "recall_0.20_A": found / eligible if eligible else None,
+            "physical_pes_calls_per_reference_group_found": (
+                counts["known_physical_pes_calls"] / found
+                if found and not counts["missing_physical_pes_calls"] else None
+            ),
+        })
+    return results
 
 
 def main(argv):
@@ -91,11 +119,14 @@ def main(argv):
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--cache-dir", type=Path)
     parser.add_argument("--search-geometry-dir", type=Path, help="Use a local copy of the exact Search supplement")
+    parser.add_argument("--workers", type=int, default=1, help="Score independent structures in parallel")
     args = parser.parse_args(argv)
+    if args.workers < 1:
+        parser.error("--workers must be positive")
     start = perf_counter()
     dataset = UmaDataset(args.cache_dir)
     search = BenchmarkSearchFrames(args.cache_dir, directory=args.search_geometry_dir)
-    results = list(summarize(UmaScoring(dataset), load_attempts(dataset, args.attempts), search))
+    results = list(summarize(UmaScoring(dataset), load_attempts(dataset, args.attempts), search, args.workers))
     with args.output.open("x", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(results[0]))
         writer.writeheader()

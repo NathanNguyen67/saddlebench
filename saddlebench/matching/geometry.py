@@ -385,10 +385,16 @@ class BatchedAnchorFilter:
                 continue
         self.buckets = {}
         for key, data in buckets.items():
+            positions = np.stack([d[1] for d in data])
+            sample = None
+            if self.all_atoms and positions.shape[1] > 16 and len(data) > 16:
+                relative = positions - positions[:, :1, :]
+                spread = np.var(relative, axis=0).sum(axis=1)
+                # Try atoms that separate the references before scanning every atom.
+                sample = np.r_[0, np.argsort(spread[1:])[-15:] + 1]
             self.buckets[key] = (
                 np.asarray([d[0] for d in data], dtype=np.intp),
-                np.stack([d[1] for d in data]),
-                np.stack([d[2] for d in data]),
+                positions, np.stack([d[2] for d in data]), sample,
             )
 
     def _selected(self, n):
@@ -411,7 +417,7 @@ class BatchedAnchorFilter:
                     or not np.isfinite(cell).all()):
                 return keep
             anchor = query_pos[self._selected(n)]
-            indices, positions, cells = bucket
+            indices, positions, cells, sample = bucket
             periodic = np.asarray(pbc, dtype=bool)
             if periodic.any():
                 basis = cell[periodic].T
@@ -423,45 +429,43 @@ class BatchedAnchorFilter:
                 if (not np.isfinite(sigma) or sigma <= 1e-10*max(1., scale)
                         or scale/sigma > 20.):
                     return keep
-                gram = basis.T @ basis
+                projection = np.linalg.solve(basis.T @ basis, basis.T).T
             else:
                 basis = None
             # Extra guard is intentionally larger than the scalar filter's
             # 1e-8: near-threshold candidates go through the old exact path.
             guard = 1e-7 * (1. + float(maxdev))
             cutoff = 2. * float(maxdev) + 1e-8 + guard
-            for lo in range(0, len(indices), self.chunk_size):
-                hi = min(lo + self.chunk_size, len(indices))
-                compatible = np.max(np.abs(cells[lo:hi] - cell), axis=(1, 2)) <= 0.05
-                if not np.any(compatible):
-                    continue
-                offsets = np.flatnonzero(compatible)
-                rel = positions[lo:hi][offsets] - anchor
+            def reject(rel):
                 rel -= rel[:, :1, :]
-                # Avoid cancellation in enormous, nearly equal coordinates;
-                # the frozen scalar implementation handles such extremes.
+                # Avoid cancellation in enormous coordinates.
                 if np.max(np.abs(rel)) >= 1e5:
-                    continue
-                # For periodic cells, the orthogonal residual plus the minimum
-                # singular value yield a rigorously conservative Euclidean
-                # lower bound for distance to EVERY lattice image:
-                # ||d - B*n||^2 >= ||d - B*f||^2 +
-                #                      sigma_min(B)^2 * dist(f,Z^m)^2.
+                    return np.zeros(len(rel), dtype=bool)
+                # The orthogonal residual and the minimum singular value
+                # bound the distance to every periodic image from below.
                 if basis is None:
-                    lower = np.linalg.norm(rel, axis=2)
+                    lower_sq = np.einsum('ijk,ijk->ij', rel, rel)
                 else:
                     flat = rel.reshape(-1, 3)
-                    f = np.linalg.solve(gram, (flat @ basis).T).T
+                    f = flat @ projection
                     normal = flat - f @ basis.T
                     residue = f - np.rint(f)
                     lower_sq = (np.einsum('ij,ij->i', normal, normal)
                                 + sigma*sigma*np.einsum('ij,ij->i', residue, residue))
-                    lower = np.sqrt(np.maximum(lower_sq, 0.)).reshape(len(offsets), -1)
-                reject = np.any(lower > cutoff, axis=1)
-                # Comparability and any numerical abnormalities are deferred
-                # to the frozen original matcher rather than being rejected.
-                reject &= np.isfinite(lower).all(axis=1)
-                keep[indices[lo:hi][offsets[reject]]] = False
+                    lower_sq = lower_sq.reshape(len(rel), -1)
+                return ((lower_sq > cutoff*cutoff).any(axis=1)
+                        & np.isfinite(lower_sq).all(axis=1))
+
+            for lo in range(0, len(indices), self.chunk_size):
+                hi = min(lo + self.chunk_size, len(indices))
+                compatible = np.max(np.abs(cells[lo:hi] - cell), axis=(1, 2)) <= 0.05
+                rows = lo + np.flatnonzero(compatible)
+                if sample is not None and rows.size:
+                    rejected = reject(positions[rows[:, None], sample] - anchor[sample])
+                    keep[indices[rows[rejected]]] = False
+                    rows = rows[~rejected]
+                if rows.size:
+                    keep[indices[rows[reject(positions[rows] - anchor)]]] = False
         except (KeyError, TypeError, ValueError, OverflowError, IndexError,
                 np.linalg.LinAlgError, FloatingPointError):
             # No partial rejection if numerical certification failed.
