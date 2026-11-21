@@ -1,0 +1,234 @@
+{
+ "hf_revision": "acdac15b98282a9137a76c060913fcc0ce08462b",
+ "data_revision": "ef3118944c33c683502b37d72ebd170ef98077cd",
+ "data_branch": "uma-explorer-data-20261121",
+ "schema": "saddlemotif-explorer-v2",
+ "built_from": "lite.epoch56_final_local_20261119_1256.db (the UMA export source), SaddleMotif explorer_v2 build_structure.py, Nov 19 2026",
+ "payloads": {
+  "lit_battery:B01": {
+   "path": "explorer/lit_battery-B01.json.gz",
+   "sha256": "f93a0dd883fe2afee8d95e3c8079bcc719f55ce7734dcfc08e94801764a887a8",
+   "bytes": 1042254
+  },
+  "lit_battery:B02": {
+   "path": "explorer/lit_battery-B02.json.gz",
+   "sha256": "79043d6a2bd6465f1bd8893285ad8084da58186a40fd45d97036fe04ede1505b",
+   "bytes": 65662
+  },
+  "lit_battery:B03": {
+   "path": "explorer/lit_battery-B03.json.gz",
+   "sha256": "f50a93c3ff48890e16bd06d1e630fe5b5c3a5385be0673c134d92f2a4f38e9e5",
+   "bytes": 142507
+  },
+  "lit_battery:B04": {
+   "path": "explorer/lit_battery-B04.json.gz",
+   "sha256": "99545fe890a86dbf87b64d16b42aeea11ff2b25a64f3be4a31cba7a16814c944",
+   "bytes": 449718
+  },
+  "lit_battery:B05": {
+   "path": "explorer/lit_battery-B05.json.gz",
+   "sha256": "fca889735cfc6e6b82c07632148cd07c18b9185f6c4f28c9972ff180b614b9cf",
+   "bytes": 184574
+  },
+  "lit_battery:B06": {
+   "path": "explorer/lit_battery-B06.json.gz",
+   "sha256": "cbccddbf02e1627a86aa602bb44784fb85a1a3740efd335607e2b6d85ed939f5",
+   "bytes": 1837810
+  },
+  "lit_battery:B07": {
+   "path": "explorer/lit_battery-B07.json.gz",
+   "sha256": "ebd4c61495d818ccb0e5983514bccd59cc678d49692b7e7cac68cb8cacffd428",
+   "bytes": 203134
+  },
+  "lit_battery:B08": {
+   "path": "explorer/lit_battery-B08.json.gz",
+   "sha256": "c9d8b621db3956bfe4e45dee5d8ee265e6bd7afefe1824e175e3cdc715935e42",
+   "bytes": 109681
+  },
+  "lit_bulk:L01": {
+   "path": "explorer/lit_bulk-L01.json.gz",
+   "sha256": "c96d45a510e29a6aec6dabbae222fe1f89651c22e279895666fc62f487db052f",
+   "bytes": 1050
+  },
+  "lit_bulk:L01_I_Si65_2x2x2_v20261115": {
+   "path": "explorer/lit_bulk-L01_I_Si65_2x2x2_v20261115.json.gz",
+   "sha256": "c07503033e67b5b85c7c2c31085f90f92c07b9c42e1bcd6ef176f6285f82ba79",
+   "bytes": 7044
+  },
+  "lit_bulk:L01_V_Si215_3x3x3_v20261115": {
+   "path": "explorer/lit_bulk-L01_V_Si215_3x3x3_v20261115.json.gz",
+   "sha256": "267425304324617eb42ae2cf8150f98196181d5b7c53a33652f88f53896f2d94",
+   "bytes": 16287
+  },
+  "lit_bulk:L02": {
+   "path": "explorer/lit_bulk-L02.json.gz",
+   "sha256": "85e71d8007689a10c0b43c80184adca95086b3cfc6c3686d4a00cb772b1f159e",
+   "bytes": 7024
+  },
+  "lit_bulk:L03": {
+   "path": "explorer/lit_bulk-L03.json.gz",
+   "sha256": "5bd8c0979b4cdfa7246e7e1172db9f34a1134775acabbf95d91bf242c4c2c19c",
+   "bytes": 19114
+  },
+  "lit_bulk:L04": {
+   "path": "explorer/lit_bulk-L04.json.gz",
+   "sha256": "1893fe57fbb901cc7bd06178a6fd19bed81b0f7b0dca82e2f5c9ff4fa4e34d6c",
+   "bytes": 157157
+  },
+  "lit_bulk:L05": {
+   "path": "explorer/lit_bulk-L05.json.gz",
+   "sha256": "cb1a8b2ef577149830afb3e09635bc6f0e36c0aeeb5030cc1ddd6dbf06d115da",
+   "bytes": 18960
+  },
+  "lit_bulk:L05_rutile_Ti32O63_2x2x4_v20261115": {
+   "path": "explorer/lit_bulk-L05_rutile_Ti32O63_2x2x4_v20261115.json.gz",
+   "sha256": "e7ab0549e75116d544e4f5d4060c57b1a917f79285efe0a957b54336af1e54c7",
+   "bytes": 4068
+  },
+  "lit_bulk:L06": {
+   "path": "explorer/lit_bulk-L06.json.gz",
+   "sha256": "2d6749aa0fc993323e7a7168380967202335919402c9d8e54b4ee6d31798611c",
+   "bytes": 19435
+  },
+  "lit_bulk:L07": {
+   "path": "explorer/lit_bulk-L07.json.gz",
+   "sha256": "048626b3d5eef3baf2ea19e3590cdfd101ae1dc946120abfde7dc4229dd1c94e",
+   "bytes": 13270
+  },
+  "lit_bulk:O05": {
+   "path": "explorer/lit_bulk-O05.json.gz",
+   "sha256": "3f7f7c750188540edf27e44be8003e44de3b35f61f671ca9b3928c4d797b63db",
+   "bytes": 659129
+  },
+  "lit_bulk:O05_reseed_v20261117": {
+   "path": "explorer/lit_bulk-O05_reseed_v20261117.json.gz",
+   "sha256": "097a7f0c0f78b5e090a76710935a68eb24d9b536e6d5d51e32a7e74109ef7baf",
+   "bytes": 817426
+  },
+  "lit_metal_surfaces:C01": {
+   "path": "explorer/lit_metal_surfaces-C01.json.gz",
+   "sha256": "8d98e4464017a201ad51077dd20415c504b8063b5dc79f3ee8a5b4b73aee0320",
+   "bytes": 13799
+  },
+  "lit_metal_surfaces:C02": {
+   "path": "explorer/lit_metal_surfaces-C02.json.gz",
+   "sha256": "a96d832e8bdaa6cec2134e577cfc096280b16ad8aa7ac9f671129a70cabee1c6",
+   "bytes": 72199
+  },
+  "lit_metal_surfaces:C02_D3zero_paper_fcc_v20261116": {
+   "path": "explorer/lit_metal_surfaces-C02_D3zero_paper_fcc_v20261116.json.gz",
+   "sha256": "f5474ba338581369451cbbc1519c5f67a631d791f96825139d497a4a9e8e678d",
+   "bytes": 178344
+  },
+  "lit_metal_surfaces:C02fam_bare_Pt111_4H_2sqrt7_v20261118": {
+   "path": "explorer/lit_metal_surfaces-C02fam_bare_Pt111_4H_2sqrt7_v20261118.json.gz",
+   "sha256": "ba8bbbea3f3648f4e9d0dc2a18031ae71f351ecc9c20e2c14f9c0fe514bc228a",
+   "bytes": 46320
+  },
+  "lit_metal_surfaces:C02fam_close_divac_4of4H_4H_2sqrt7_v20261118": {
+   "path": "explorer/lit_metal_surfaces-C02fam_close_divac_4of4H_4H_2sqrt7_v20261118.json.gz",
+   "sha256": "03edf13dc0822607aa86486634fa19accee475faefe95d1e88e583fb7f3c32db",
+   "bytes": 234497
+  },
+  "lit_metal_surfaces:C02fam_far_divac_6of6H_4H_2sqrt7_v20261118": {
+   "path": "explorer/lit_metal_surfaces-C02fam_far_divac_6of6H_4H_2sqrt7_v20261118.json.gz",
+   "sha256": "59e8022cd84cdc7e6573273a4c09b37595f1b67778b3e23a14251427870484ba",
+   "bytes": 594957
+  },
+  "lit_metal_surfaces:C03": {
+   "path": "explorer/lit_metal_surfaces-C03.json.gz",
+   "sha256": "83a3f927d7d005597a4299543da851252b90b4825c59d000a4d5cc8b4488249a",
+   "bytes": 22057
+  },
+  "lit_metal_surfaces:C04": {
+   "path": "explorer/lit_metal_surfaces-C04.json.gz",
+   "sha256": "6319ce402e731ba10c9ed1aa03e71f71824248fd9f579f6b5d44d5e8d5180dcb",
+   "bytes": 37899
+  },
+  "lit_metal_surfaces:C04_mono_m363_v20261115": {
+   "path": "explorer/lit_metal_surfaces-C04_mono_m363_v20261115.json.gz",
+   "sha256": "e73d77672c17a2c3f58f9b788460d8743185ee70bfb2a2e5d8bcaae989867385",
+   "bytes": 166488
+  },
+  "lit_metal_surfaces:C05": {
+   "path": "explorer/lit_metal_surfaces-C05.json.gz",
+   "sha256": "035f1ab2a8ed3c270c5cfc676ed59f3ade931c89988aa2641029b7adf9ab618a",
+   "bytes": 12031
+  },
+  "lit_metal_surfaces:C05_bridge_CO_Ni211_148_v20261115": {
+   "path": "explorer/lit_metal_surfaces-C05_bridge_CO_Ni211_148_v20261115.json.gz",
+   "sha256": "2973812823a4dd055b1f8baaf921cb3cbb6a86afb3d6a9b5780cad9fe853470c",
+   "bytes": 22046
+  },
+  "lit_metal_surfaces:C06": {
+   "path": "explorer/lit_metal_surfaces-C06.json.gz",
+   "sha256": "235d6153bf2e519241792df7ed8a82de9c8db830cc8b0a0daa392372f4f41b63",
+   "bytes": 71020
+  },
+  "lit_metal_surfaces:C06_flat_N2_Ru0001_224_v20261115": {
+   "path": "explorer/lit_metal_surfaces-C06_flat_N2_Ru0001_224_v20261115.json.gz",
+   "sha256": "6aa9829d1526749b9efd8ae68f7465b06f20258ceb55eb193ad5149523a5a19e",
+   "bytes": 111121
+  },
+  "lit_metal_surfaces:C07_CH3_H_Ni111_85_v20261115": {
+   "path": "explorer/lit_metal_surfaces-C07_CH3_H_Ni111_85_v20261115.json.gz",
+   "sha256": "07e57f0d73e0479535ce79b95f70ea0e9540f1965a9d01ee3b641224b1d8ece0",
+   "bytes": 24493
+  },
+  "lit_metal_surfaces:C07_Ni111_author_FS": {
+   "path": "explorer/lit_metal_surfaces-C07_Ni111_author_FS.json.gz",
+   "sha256": "98ff20c62e51468154883c55ba3a3cf5ff27d4a12881a0360f6d9c986ff36fa7",
+   "bytes": 17508
+  },
+  "lit_oxide_surfaces:O01": {
+   "path": "explorer/lit_oxide_surfaces-O01.json.gz",
+   "sha256": "a87afdd08aeb82425fc69922bfe48bfeb3c10777450e66b159e8e1e66a1d0603",
+   "bytes": 9284
+  },
+  "lit_oxide_surfaces:O02": {
+   "path": "explorer/lit_oxide_surfaces-O02.json.gz",
+   "sha256": "903185ac610145f273fea70ecb92a7b282405cec443339a8f2e30b4616d31e5d",
+   "bytes": 82553
+  },
+  "lit_oxide_surfaces:O03": {
+   "path": "explorer/lit_oxide_surfaces-O03.json.gz",
+   "sha256": "55a6273458472d7a7ad0444fc05f030ce5b3e8da84389f0606a1d4eab96e67ab",
+   "bytes": 45851
+  },
+  "lit_oxide_surfaces:O03_H2O_at_vacancy_TiO2_290_v20261115": {
+   "path": "explorer/lit_oxide_surfaces-O03_H2O_at_vacancy_TiO2_290_v20261115.json.gz",
+   "sha256": "a0f87f13c6e1966ff0d2ac0763005a28ed4ad6d8d01b755028a745b4cc74d25e",
+   "bytes": 87379
+  },
+  "lit_oxide_surfaces:O04": {
+   "path": "explorer/lit_oxide_surfaces-O04.json.gz",
+   "sha256": "0edfea96cbd3b3bf6725503b38987dc9e45dd56bda95e418a9976fcf6dc6e493",
+   "bytes": 7806
+  },
+  "lit_oxide_surfaces:O06": {
+   "path": "explorer/lit_oxide_surfaces-O06.json.gz",
+   "sha256": "4f8e8572006939494a8a3b4cdc2312aaee5831e939f35b8626080f572022fa3d",
+   "bytes": 410564
+  },
+  "lit_oxide_surfaces:O07": {
+   "path": "explorer/lit_oxide_surfaces-O07.json.gz",
+   "sha256": "eeb56890a90d3f864f31f5ffce6499bbdd708109da285c24bb78ad8341fe8adc",
+   "bytes": 1097881
+  },
+  "lit_oxide_surfaces:O08": {
+   "path": "explorer/lit_oxide_surfaces-O08.json.gz",
+   "sha256": "e289895d81ddb9d534e1be4f73ed64355d631106018a8c26cf48f01384430372",
+   "bytes": 90190
+  },
+  "oc20:al_385": {
+   "path": "explorer/oc20-al_385.json.gz",
+   "sha256": "b36718fb3c6fbb97a8473c24eceebabc6586a6934d892f9fe108912038e252cf",
+   "bytes": 4730592
+  },
+  "oc20:pt_343": {
+   "path": "explorer/oc20-pt_343.json.gz",
+   "sha256": "27e0cd80e52cb6d3f68388182262f16d20462ce9479aae258dc41e61f3d41f94",
+   "bytes": 298308
+  }
+ }
+}

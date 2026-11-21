@@ -200,11 +200,10 @@ def test_baseline_selects_eligible_cases_before_loading_default_motif(export, mo
     assert output.is_file()
 
 
-def test_uma_motif_bonus_and_missed_endpoint(export):
+def test_uma_motif_bonus(export):
     from ase.io import read
     from saddlebench.scoring.uma import UmaScoring
     from saddlebench.uma_baseline import METHODS, score_structure
-    from saddlebench.uma_missed import geometry_payload
 
     scoring = UmaScoring(UmaDataset(export.parent / "cache"))
     class Search:
@@ -225,12 +224,77 @@ def test_uma_motif_bonus_and_missed_endpoint(export):
     assert augmented["reference_groups_found_0.20_A"] == 1
     assert augmented["predictions_scored"] == 2
     assert augmented["physical_pes_calls_per_reference_group_found"] is None
-    [(_, payload)] = geometry_payload(scoring, "parent", {"seed": {method: {"0.20": ["saddle"]}}})
-    missed = payload["saddles"]["saddle"]
-    assert missed["product"] == "product"
-    assert missed["barrier"] == .99
-    assert missed["productEnergy"] == -.2
-    assert missed["maxMove"] == .2
+
+
+def _explorer_payload(parent, saddles):
+    """Smallest valid saddlemotif-explorer-v2 payload: one atom, one class, one reaction per saddle ID."""
+    import base64
+    empty = base64.b64encode(b"").decode()
+    reactions = [{
+        "id": i, "saddle": sid, "key": sid, "reactant": "seed", "product": f"p{i}", "seedConnected": True,
+        "nObs": 1, "doubleMins": [], "source": "random", "method": None, "findSeq": None, "curvature": -0.5,
+        "eR": 0.0, "eS": 0.5, "eP": 0.1, "barrier": 0.5, "reverseBarrier": 0.4, "reactionEnergy": 0.1,
+        "saddleMinima": 2, "productGroup": 0, "classes": ["C001"], "frames": [[0, 0]] * 3, "mode": None,
+        "motion": {"label": "local", "moved": 1, "fraction": 1.0, "max_A": 0.5, "resultant": 1.0, "groups": []},
+    } for i, sid in enumerate(saddles)]
+    return {
+        "schema": "saddlemotif-explorer-v2",
+        "structure": {"parent": parent, "task": "oc20", "dataset": "lit", "numbers": [13], "positions": [[0, 0, 0]],
+                      "cell": [[3, 0, 0], [0, 3, 0], [0, 0, 3]], "pbc": [True, True, True], "fixed": [], "seeds": ["seed"]},
+        "provenance": {"snapshot": "test", "generation": 1, "model": "uma", "hessians": "unverified"},
+        "thresholds": {"moved_A": 0.5}, "encoding": {"displacementA": 0.001, "modeUnit": 1 / 32000},
+        "classes": [{"id": "C001", "representative": 0, "reactions": list(range(len(saddles))), "saddles": len(saddles),
+                     "barrierMin": 0.5, "barrierMax": 0.5, "productMinima": 1, "productGroups": 1, "majorProductGroups": 1,
+                     "multiEndpointSaddles": 0, "alignedGroups": 0, "movedMedian": 1, "motionCounts": {"local": 1},
+                     "tags": ["Local"]}],
+        "reactions": reactions,
+        "buffers": {"frameIndex": empty, "frameValues": empty, "modeIndex": empty, "modeValues": empty},
+    }
+
+
+def test_explorer_marks_found_and_missed_reference_saddles(export, tmp_path):
+    import gzip
+    import json
+    import re
+    from saddlebench.explorer import score_overlay, write_explorer
+    from saddlebench.scoring.uma import UmaScoring
+
+    scoring = UmaScoring(UmaDataset(export.parent / "cache"))
+    payload = _explorer_payload("parent", ["saddle", "other"])
+    labels = {"submission": "Your submission", "sella": "Sella"}
+    matched = {("seed", "submission"): {"0.20": ["saddle"], "0.10": [], "0.05": []},
+               ("seed", "sella"): {"0.20": [], "0.10": [], "0.05": []}}
+    overlay = score_overlay(scoring, "parent", {"seed"}, matched, labels, payload)
+    assert set(overlay["reference"]) == {"saddle"}
+    assert overlay["found"]["submission"]["0.20"] == ["saddle"]
+    assert overlay["found"]["sella"]["0.20"] == []
+    assert [m["id"] for m in overlay["methods"]] == ["submission", "sella"]
+    assert overlay["absent"] == []
+
+    payloads = tmp_path / "payloads"
+    payloads.mkdir()
+    (payloads / "parent.json.gz").write_bytes(gzip.compress(json.dumps(payload).encode()))
+    pages = write_explorer(tmp_path / "site", scoring, matched, labels, payload_dir=payloads, scoreboard_href="../x.html")
+    assert pages == {"parent": "parent.html"}
+    page = (tmp_path / "site" / "parent.html").read_text()
+    config = json.loads(re.search(r'<script id="page-config" type="application/json">(.*?)</script>', page, re.S).group(1))
+    assert config["mode"] == "bench" and config["score"]["found"]["submission"]["0.20"] == ["saddle"]
+    index = (tmp_path / "site" / "index.html").read_text()
+    data = json.loads(re.search(r'<script id="index-data" type="application/json">(.*?)</script>', index, re.S).group(1))
+    [row] = data["rows"]
+    assert row["score"] == {"reference": 1, "found": {"submission": {"0.20": 1, "0.10": 0, "0.05": 0},
+                                                      "sella": {"0.20": 0, "0.10": 0, "0.05": 0}}}
+
+
+def test_literature_notes_follow_the_family_code():
+    from saddlebench.explorer import literature
+
+    note = literature("lit_battery:B01")
+    assert note["links"][0]["href"].startswith("https://doi.org/")
+    assert note["mechanism"]
+    reseeded = literature("lit_bulk:L01_V_Si215_3x3x3_v20261115")
+    assert reseeded["mechanism"].startswith("Si vacancy")
+    assert literature("oc20:al_385") is None
 
 
 def test_manifest_rejects_tampered_table(export):
@@ -460,3 +524,12 @@ def test_actual_tail_alone_admits_a_seed(export, capsys):
     result = json.loads(output.read_text())
     assert result["confidence_sources"] == ["actual"]
     assert result["eligible_reference_groups"] == 1
+
+
+def test_vendored_explorer_matches_its_record():
+    import subprocess
+    import sys
+    root = Path(__file__).resolve().parents[1]
+    result = subprocess.run([sys.executable, str(root / "scripts" / "vendor_explorer.py"), "--check"],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr

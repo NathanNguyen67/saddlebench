@@ -9,7 +9,7 @@ from saddlebench.reference.uma import CONFIDENCE_TAIL, REVISION, confidence_sour
 from saddlebench.scoring.uma import THRESHOLDS
 from saddlebench.uma_catalog import select_cases
 from saddlebench.uma_metrics import METHOD_LABELS, TEMPERATURE_K
-from saddlebench.uma_missed import write_missed_viewer
+from saddlebench.explorer import write_explorer
 
 
 PAGE = """<!doctype html>
@@ -107,7 +107,7 @@ function updateCoverageChart() {
   legend.replaceChildren();
   const colors = {'sella_prfo_diag4_abs01': '#266c50',
     'tsbfgs_dimer_rot4_frot01_r23_allprobes': '#164b94',
-    'sella_motif_augmented': '#a34b15', 'tsbfgs_dimer_motif_augmented': '#684596'};
+    'sella_motif_augmented': '#a34b15', 'tsbfgs_dimer_motif_augmented': '#684596', 'submission': '#b42318'};
   for (const line of series) {
     const color = colors[line.id];
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
@@ -144,14 +144,17 @@ def cell(value, *, numeric=False):
     return f"<td{attr}>{escape(str(value)) if value is not None else '—'}</td>"
 
 
-def result_row(row, *, baseline):
+def result_row(row, *, baseline, pages=None, labels=METHOD_LABELS):
     fields = [cell(row["dataset"])]
     if not baseline:
         fields.append(cell(row["case_id"]))
-    fields.append(structure_cell(row["parent_id"]))
+    page = (pages or {}).get(row["parent_id"])
+    method = row.get("method_id", "submission")
+    href = f"{page}#m={quote(method)}&missed=1" if page else None
+    fields.append(structure_cell(row["parent_id"], href))
     if baseline:
-        fields.append(cell(METHOD_LABELS.get(row["method_id"], row["method_id"])))
-        fields.extend(cell(row[key], numeric=True) for key in ("attempts", "converged"))
+        fields.append(cell(labels.get(row["method_id"], row["method_id"])))
+        fields.extend(cell(row.get(key), numeric=True) for key in ("attempts", "converged"))
     fields.append(cell(row["predictions_scored"], numeric=True))
     eligible = row["eligible_reference_groups"]
     for threshold in THRESHOLDS:
@@ -163,10 +166,13 @@ def result_row(row, *, baseline):
     return f'<tr data-dataset="{escape(row["dataset"])}">{"".join(fields)}</tr>'
 
 
-def structure_cell(name):
+def structure_cell(name, href=None):
     shown = name.split(":", 1)[-1]
     if len(shown) > 30:
         shown = shown[:29].rstrip("_") + "…"
+    if href:
+        return (f'<td class="identity" title="{escape(name)}: open in the explorer with missed saddles shown">'
+                f'<a href="{escape(href, quote=True)}">{escape(shown)}</a></td>')
     return f'<td class="identity" title="{escape(name)}">{escape(shown)}</td>'
 
 
@@ -181,7 +187,7 @@ def coverage_values(rows, cutoff, *, rate):
     )
 
 
-def method_summary(rows, options, selected):
+def method_summary(rows, options, selected, labels=METHOD_LABELS):
     tables = []
     base_headers = ["Method", "Structures", "Reference hits at 0.20 Å", "Total search work"]
     for rate, title in ((True, "Rate coverage"), (False, "Unweighted group coverage")):
@@ -195,7 +201,7 @@ def method_summary(rows, options, selected):
                     scope == "literature" and row["dataset"].startswith("lit_")
                 ):
                     per_method[row["method_id"]].append(row)
-            ordered = sorted(METHOD_LABELS, key=lambda method: (
+            ordered = sorted(labels, key=lambda method: (
                 not per_method[method],
                 -(coverage_values(per_method[method], THRESHOLDS[0], rate=rate)[0] or 0),
             ))
@@ -205,7 +211,7 @@ def method_summary(rows, options, selected):
                 eligible = sum(row["eligible_reference_groups"] for row in group)
                 times = [row["total_benchmark_work_s"] for row in group]
                 hours = sum(times) / 3600 if times and None not in times else None
-                fields = [cell(METHOD_LABELS[method]), cell(len(group), numeric=True),
+                fields = [cell(labels[method]), cell(len(group), numeric=True),
                           cell(f"{hits}/{eligible}" if group else "No results"),
                           cell(f"{hours:,.2f} h" if hours is not None else "N/A", numeric=True)]
                 for cutoff in THRESHOLDS:
@@ -224,7 +230,7 @@ Compare rows on the same structures. Motif rows require additional proposals.</p
 </section>"""
 
 
-def coverage_chart(rows, options, timelines):
+def coverage_chart(rows, options, timelines, labels=METHOD_LABELS):
     if not timelines:
         return ""
     data = {}
@@ -261,7 +267,7 @@ def coverage_chart(rows, options, timelines):
                         covered += increment
                         points.append([round(time, 3), round(covered, 7)])
                     curves[f"{metric}:{cutoff:.2f}"].append(dict(
-                        id=method, label=METHOD_LABELS[method], duration=duration,
+                        id=method, label=labels.get(method, method), duration=duration,
                         structures=len(group), points=points,
                     ))
         data[scope] = curves
@@ -300,7 +306,10 @@ def seed_row(scoring, seed):
     )
 
 
-def write_scoreboard(path, scoring, rows, *, dataset, baseline=False, matched=None, timelines=None):
+def write_scoreboard(path, scoring, rows, *, dataset, baseline=False, matched=None, timelines=None,
+                     labels=None, cache_dir=None, explorer_payloads=None):
+    """Write the scoreboard HTML and, when matches are given, a structure explorer beside it (STEM-explorer/)."""
+    labels = dict(labels or METHOD_LABELS)
     seeds = select_cases(scoring, confident_only=False)
     eligible = sum(bool(confidence_sources(seed)) for seed in seeds)
     names = sorted({scoring.datasets[seed["parent_id"]] for seed in seeds})
@@ -317,16 +326,21 @@ def write_scoreboard(path, scoring, rows, *, dataset, baseline=False, matched=No
     headers += ["Predictions compared", *[f"Found at {t:.2f} Å" for t in THRESHOLDS], "Unmatched frames"]
     headers += ["Search work"]
     result_headers = "".join(f'<th scope="col">{name}</th>' for name in headers)
-    results_html = "\n".join(result_row(row, baseline=baseline) for row in rows)
-    seeds_html = "\n".join(seed_row(scoring, seed) for seed in seeds)
-    summary = method_summary(rows, options, dataset) if baseline else ""
-    chart = coverage_chart(rows, options, timelines)
+    pages, missed_link = {}, ""
     if matched:
-        viewer = path.with_name(path.stem + "-missed.html")
-        write_missed_viewer(viewer, scoring, matched)
-        missed_link = f'<p><a href="{quote(viewer.name)}">Inspect missed saddles and endpoint geometries</a></p>'
-    else:
-        missed_link = ""
+        explorer = path.with_name(path.stem + "-explorer")
+        pages = write_explorer(explorer, scoring, matched, labels, cache_dir=cache_dir,
+                               payload_dir=explorer_payloads, scoreboard_href=f"../{quote(path.name)}")
+        pages = {parent: f"{quote(explorer.name)}/{quote(page)}" for parent, page in pages.items()}
+        if pages:
+            missed_link = (f'<section class="explore"><h2><a href="{quote(explorer.name)}/index.html">Explore the scored '
+                           f'structures</a></h2><p class="muted">Every structure as a picture, its saddle classes and '
+                           f'reactions, with reference saddles marked found or missed for each method. Structure '
+                           f'names in the results table open that structure with its misses shown.</p></section>')
+    results_html = "\n".join(result_row(row, baseline=baseline, pages=pages, labels=labels) for row in rows)
+    seeds_html = "\n".join(seed_row(scoring, seed) for seed in seeds)
+    summary = method_summary(rows, options, dataset, labels) if baseline else ""
+    chart = coverage_chart(rows, options, timelines, labels)
     with path.open("x", encoding="utf-8") as output:
         output.write(PAGE)
         output.write(f"""

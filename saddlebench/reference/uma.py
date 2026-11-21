@@ -46,6 +46,9 @@ class UmaDataset:
         return self.verified[name]
 
     def table(self, name, **options):
+        # memory_map avoids pyarrow's coalesced pre-buffered reads, which fail with EFAULT ("Bad address") on
+        # some Lustre mounts (LS6 /scratch, 2026-11-21) and are not faster for these local files.
+        options.setdefault("memory_map", True)
         return pq.read_table(self.file(f"{name}.parquet"), **options)
 
     def frames(self, records):

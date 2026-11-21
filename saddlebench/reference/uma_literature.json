@@ -1,0 +1,456 @@
+{
+ "B01": {
+  "short": "B01",
+  "citation": "Timrov 2022",
+  "links": [
+   {
+    "href": "https://doi.org/10.1103/PRXEnergy.1.033003",
+    "label": "Timrov 2022"
+   }
+  ],
+  "mechanism": "Li/vacancy rearrangement in Li0.5FePO4",
+  "expect": "Confirm Li migration rather than collective host reconstruction; keep if phase-separated metastable environments are acceptable.",
+  "system": "Li0.5FePO4 (104; 0 fixed)",
+  "construction": "Author QE Config1 26-atom parent repeated 1x2x2 -> 104; partial Li ordering preserved. Caveat: Not the author-relaxed 104-atom cell; homogeneous x=0.5 phase is metastable.",
+  "caveat": "Homogeneous half-lithiated phase is metastable. Source 26-atom ordering is repeated, not author-relaxed 104-atom cell."
+ },
+ "B02": {
+  "short": "B02",
+  "citation": "Takahashi 2007",
+  "links": [
+   {
+    "href": "https://doi.org/10.1088/0953-8984/19/43/436202",
+    "label": "Takahashi 2007"
+   }
+  ],
+  "mechanism": "Li-vacancy rearrangement in Li0.5CoO2",
+  "expect": "Look for Li changing crystallographic sites while CoO2 layers stay intact.",
+  "system": "Li0.5CoO2 (126; 0 fixed)",
+  "construction": "Experimental P2/m table reconstruction, 3x3x2 repeat. Caveat: Table reconstruction, not deposited simulation minimum.",
+  "caveat": "P2/m crystallographic reconstruction, not deposited NEB endpoint. Layered Li ordering is imposed."
+ },
+ "B03": {
+  "short": "B03",
+  "citation": "Bianchini 2015",
+  "links": [
+   {
+    "href": "https://doi.org/10.1107/S2052520615017199",
+    "label": "Bianchini 2015"
+   }
+  ],
+  "mechanism": "Li transport in mixed-valence spinel",
+  "expect": "Check whether diffusion is a Li hop; reconsider a magnetic/charge-aware potential for Mn-centric chemistry.",
+  "system": "Li0.5Mn2O4 spinel (52; 0 fixed)",
+  "construction": "Experimental crystal table reconstruction with partial Li occupancy. Caveat: Mn valence/magnetism not encoded in geometry.",
+  "caveat": "Mn oxidation state and charge ordering are not captured by geometry alone."
+ },
+ "B04": {
+  "short": "B04",
+  "citation": "Zhang 2020 / Materials Cloud",
+  "links": [
+   {
+    "href": "https://doi.org/10.1126/science.aax3520",
+    "label": "Zhang 2020 / Materials Cloud"
+   }
+  ],
+  "mechanism": "Extra-Li motion in spinel LTO",
+  "expect": "Look for which extra Li migrates and whether host Ti–O framework remains spinel.",
+  "system": "Li5.125Ti5O12 (177; 0 fixed)",
+  "construction": "177-atom author-deposited Li5+x NEB starting endpoint; one extra Li. Caveat: Starting endpoint not certified UMA minimum.",
+  "caveat": "Author-deposited starting endpoint (177 atoms) contains extra Li; strong starting provenance."
+ },
+ "B05": {
+  "short": "B05",
+  "citation": "Yao 2026",
+  "links": [
+   {
+    "href": "https://doi.org/10.1038/s41467-026-74887-z",
+    "label": "Yao 2026"
+   }
+  ],
+  "mechanism": "Li diffusion in Ta-doped cubic LLZO",
+  "expect": "Look for Li hops through connected sites, not wholesale lattice disorder.",
+  "system": "Ta-doped cubic LLZO (188; 0 fixed)",
+  "construction": "188-atom author POSCAR Li6.5La3Zr1.5Ta0.5O12; chosen cubic not amorphous. Caveat: Parent source geometry not certified UMA minimum.",
+  "caveat": "Author-derived cubic POSCAR; chemically ordered Ta placement may condition pathways."
+ },
+ "B06": {
+  "short": "B06",
+  "citation": "LightPFP example / Baktash 2020",
+  "links": [
+   {
+    "href": "https://doi.org/10.1038/s41524-020-00432-1",
+    "label": "LightPFP example / Baktash 2020"
+   }
+  ],
+  "mechanism": "Li transport in Li6PS5Cl argyrodite",
+  "expect": "Decide whether to model ordered-local jumps or disordered superionic transport; review new minimum and consider larger/disordered cell.",
+  "system": "Li6PS5Cl argyrodite (52; 0 fixed)",
+  "construction": "52-atom native fully occupied ordered-S/Cl parent; no Li removed. Caveat: Order/disorder selection matters; no force certification.",
+  "caveat": "Old Lite minimum moves by 0.917 Å under UMA-S-1.2.1, crossing the 0.2 Å identity cutoff. Fully ordered S/Cl may suppress long-range Li pathways."
+ },
+ "B07": {
+  "short": "B07",
+  "citation": "Marcolongo et al. Materials Cloud",
+  "links": [
+   {
+    "href": "https://doi.org/10.24435/materialscloud:2019.0067/v1",
+    "label": "Marcolongo et al. Materials Cloud"
+   }
+  ],
+  "mechanism": "Li transport in LGPS",
+  "expect": "Confirm the relaxed lattice preserves LGPS and discovered events are Li-ion hops.",
+  "system": "Li10GeP2S12 LGPS (50; 0 fixed)",
+  "construction": "50-atom author FPMD pfe_orig_1 frame 7, no repeat. Caveat: MD snapshot, source-force fmax about 1.32 eV/A, not a minimum.",
+  "caveat": "Original literature geometry is an FPMD frame, not a force-converged minimum; saved Lite viewer starts from a relaxed minimum."
+ },
+ "B08": {
+  "short": "B08",
+  "citation": "Marcolongo et al. Materials Cloud",
+  "links": [
+   {
+    "href": "https://doi.org/10.24435/materialscloud:2019.0067/v1",
+    "label": "Marcolongo et al. Materials Cloud"
+   }
+  ],
+  "mechanism": "Na transport in NASICON",
+  "expect": "Confirm Na-site hops and framework integrity in the relaxed model.",
+  "system": "Na3Zr2Si2PO12 NASICON (80; 0 fixed)",
+  "construction": "80-atom author FPMD frame 27; retain skewed lattice. Caveat: MD snapshot, source-force fmax about 2.74 eV/A, not a minimum.",
+  "caveat": "Original geometry is a high-force FPMD snapshot; skewed cell should be preserved."
+ },
+ "C01": {
+  "short": "C01",
+  "citation": "Bogicevic 1998",
+  "links": [
+   {
+    "href": "https://doi.org/10.1103/PhysRevB.57.R4289",
+    "label": "Bogicevic 1998"
+   }
+  ],
+  "mechanism": "O motion / adsorption on Pt(111)",
+  "expect": "Check O surface hop / site exchange; confirm adsorbate coverage is desired.",
+  "system": "O on Pt(111) (148; 72 fixed)",
+  "construction": "2x2 repeat of 3x3 four-layer Pt; four O retain 1/9 ML. Caveat: Reconstructed adsorption sites.",
+  "caveat": "Four O adsorbates at 1/9 ML; source-inspired site placement."
+ },
+ "C02": {
+  "short": "C02",
+  "citation": "Arulmozhi 2023",
+  "links": [
+   {
+    "href": "https://doi.org/10.1021/jacsau.2c00648",
+    "label": "Arulmozhi 2023"
+   }
+  ],
+  "mechanism": "H diffusion / adsorption on Pt(111)",
+  "expect": "Check H adsorption-site hops; do not interpret as electrochemical HER without an appropriate environment.",
+  "system": "H on Pt(111) (148; 72 fixed)",
+  "construction": "2x2 repeat of 3x3 four-layer Pt; four H retain 1/9 ML. Caveat: Electrochemical environment absent.",
+  "caveat": "Four H at 1/9 ML; no explicit electrode potential, water or solvation."
+ },
+ "C03": {
+  "short": "C03",
+  "citation": "Lynch 2000 (Surface Science; the stored DOI was truncated)",
+  "links": [],
+  "mechanism": "CO adsorption/site change on Pt(111)",
+  "expect": "Check whether CO stays molecular and whether cooperative coverage-dependent motion is intended.",
+  "system": "CO on Pt(111) (56; 32 fixed)",
+  "construction": "4x4 Pt terrace, four CO remain at 0.25 ML; 3 layers. Caveat: Reconstructed coordinates; not paper-relaxed.",
+  "caveat": "Four CO at 0.25 ML, not a single isolated CO; 56-atom slab."
+ },
+ "C04": {
+  "short": "C04",
+  "citation": "Mei, Xu & Henkelman 2008",
+  "links": [
+   {
+    "href": "https://doi.org/10.1016/j.jcat.2008.05.024",
+    "label": "Mei, Xu & Henkelman 2008"
+   }
+  ],
+  "mechanism": "Formate reorientation/diffusion on Cu(111)",
+  "expect": "Watch O–Cu binding and HCOO adsorption configuration; distinguish rotation, diffusion, decomposition.",
+  "system": "Formate on Cu(111) (124; 72 fixed)",
+  "construction": "Four HCOO in 2x2 enlarged 3x3 slab; 1/9 ML; vacuum +8 A. Caveat: Independent bidentate geometry.",
+  "caveat": "Four HCOO adsorbates at 1/9 ML; reconstructed bidentate geometry rather than author-relaxed structure."
+ },
+ "C05": {
+  "short": "C05",
+  "citation": "Yang 2017",
+  "links": [
+   {
+    "href": "https://doi.org/10.1039/C7CP03050A",
+    "label": "Yang 2017"
+   }
+  ],
+  "mechanism": "CO at Ni(211) steps",
+  "expect": "Check that CO resides on the intended step sites; distinguish terrace and step processes.",
+  "system": "CO on stepped Ni(211) (148; 72 fixed)",
+  "construction": "2x1 repeat; two CO; three-atom-wide terraces and bottom-six Ni planes fixed. Caveat: Surface steps intentional; adsorption reconstruction.",
+  "caveat": "Two CO adsorbates; 2x1 repeat and fixed lower Ni planes."
+ },
+ "C06": {
+  "short": "C06",
+  "citation": "Mortensen 1997 / Xie 2022",
+  "links": [
+   {
+    "href": "https://doi.org/10.1021/acsomega.1c06400",
+    "label": "Mortensen 1997 / Xie 2022"
+   }
+  ],
+  "mechanism": "N2 adsorption / N–N dissociation on Ru(0001)",
+  "expect": "Inspect how a certified saddle connects the intact and dissociated states; the literature specifically studies a lying-down precursor before N-N cleavage.",
+  "system": "N2 on Ru(0001) (224; 144 fixed)",
+  "construction": "Four upright N2 on expanded six-Ru-layer 6x6 slab; source-inspired coverage. Caveat: Adsorption positions guessed; N2 binding must be checked.",
+  "caveat": "Four adsorbed N2 molecules are intact in the seed minimum (N-N 1.143 A). Six saved other-minimum geometries show a dissociated N2 pair, e.g. m154 has nearest N-N separation about 4.70 A."
+ },
+ "C07": {
+  "short": "C07",
+  "citation": "Fan 2015 / Godoy 2022",
+  "links": [
+   {
+    "href": "https://doi.org/10.1021/acs.iecr.5b00563",
+    "label": "Fan 2015 / Godoy 2022"
+   }
+  ],
+  "mechanism": "CH4 dissociation to CH3 + H on Ni(111)",
+  "expect": "If methane activation is intended, retain CH3+H and gas-phase CH4 as possible states but check a saddle actually connects them; replace the original 164-atom trial only by deliberate decision.",
+  "system": "CH3 + H on Ni(111), author final state (50 atoms; Lite's C07)",
+  "construction": "Lite uses the 50-atom author final-state cell, not the 164-atom trial in the seed bundle.",
+  "caveat": "50-atom Lite seed is CH3+H, not the original 164-atom CH4 trial: C-H 1.11-1.12 A x3, fourth H 2.87 A away. Saved m250 has intact CH4 but carbon is about 4.92 A from nearest Ni, suggesting a gas-phase molecule rather than stable chemisorption."
+ },
+ "L01": {
+  "short": "L01",
+  "citation": "COD 9013102 / Munro & Wales 1999",
+  "links": [
+   {
+    "href": "https://doi.org/10.1103/PhysRevB.59.3969",
+    "label": "COD 9013102 / Munro & Wales 1999"
+   }
+  ],
+  "mechanism": "Si vacancy motion/reconstruction",
+  "expect": "Verify the local vacancy moves rather than merely surrounding Si symmetry breaking.",
+  "system": "Si vacancy (63; 0 fixed)",
+  "construction": "64-site Si cell minus one Si; periodic origin displays vacancy at edge. Caveat: Constructed defect, not recovered author-relaxed geometry.",
+  "caveat": "63-atom constructed Si vacancy from 64-site host; not author-relaxed source."
+ },
+ "L02": {
+  "short": "L02",
+  "citation": "COD 9013463 / Jiang & Carter 2004",
+  "links": [
+   {
+    "href": "https://doi.org/10.1103/PhysRevB.70.064102",
+    "label": "COD 9013463 / Jiang & Carter 2004"
+   }
+  ],
+  "mechanism": "Interstitial H diffusion in BCC Fe",
+  "expect": "Check H tetrahedral-to-tetrahedral or octahedral hops; do not claim magnetic-DFT equivalence.",
+  "system": "H interstitial in BCC Fe (55; 0 fixed)",
+  "construction": "Fe54H tetrahedral H interstitial; all atoms translated so H near edge. Caveat: Magnetic state, precise interstitial stability unverified.",
+  "caveat": "55 atoms Fe54H, H near tetrahedral site; Fe magnetism and precise site stability are unverified in the model."
+ },
+ "L03": {
+  "short": "L03",
+  "citation": "COD 1512124",
+  "links": [
+   {
+    "href": "https://www.crystallography.net/cod/1512124.html",
+    "label": "COD 1512124"
+   }
+  ],
+  "mechanism": "O vacancy diffusion in SrTiO3",
+  "expect": "Track vacancy via missing lattice O sites; verify reference rather than accepting COD title.",
+  "system": "SrTiO3 oxygen vacancy (134; 0 fixed)",
+  "construction": "3x3x3 host Sr27Ti27O81 minus one O; vacancy displayed at edge. Caveat: COD source title has a BaTiO3/SrTiO3 bibliographic mismatch.",
+  "caveat": "134 atoms, 3x3x3 host minus one O. Bibliographic source title mismatch noted in provenance."
+ },
+ "L04": {
+  "short": "L04",
+  "citation": "COD 9014668 / Xiao 2008",
+  "links": [
+   {
+    "href": "https://doi.org/10.1016/j.matchemphys.2008.01.020",
+    "label": "COD 9014668 / Xiao 2008"
+   }
+  ],
+  "mechanism": "Ferroelectric switching in BaTiO3",
+  "expect": "Check whether two opposite polarization minima actually exist; other local saddles do not establish switching.",
+  "system": "BaTiO3 ferroelectric (40; 0 fixed)",
+  "construction": "2x2x2 polarized perovskite; collective switching, no vacancy. Caveat: UMA polar double well and reverse basin unverified.",
+  "caveat": "40 atoms, 2x2x2 polar perovskite. No vacancy. Physical interpretation requires opposite-polarization endpoints."
+ },
+ "L05": {
+  "short": "L05",
+  "citation": "COD 9007531 / Iddir 2007",
+  "links": [
+   {
+    "href": "https://www.crystallography.net/cod/9007531.html",
+    "label": "COD 9007531 / Iddir 2007"
+   }
+  ],
+  "mechanism": "O vacancy diffusion in rutile TiO2",
+  "expect": "If isolated vacancy migration is intended, test a 3x3x2 single-vacancy cell (215 atoms), not an exact repeat containing two vacancies.",
+  "system": "Rutile TiO2 bulk vacancy (107; 0 fixed)",
+  "construction": "Ti36O72 host minus one O; vacancy displayed near edge. Caveat: Defect charge/spin/polaron modeling unverified.",
+  "caveat": "107 atoms with c axis only 5.918 Å: strong potential for periodic defect-image coupling along c. Original build failed for mixed 214/107 atoms; final export repaired."
+ },
+ "L06": {
+  "short": "L06",
+  "citation": "Derlet 2007",
+  "links": [
+   {
+    "href": "https://doi.org/10.1103/PhysRevB.76.054107",
+    "label": "Derlet 2007"
+   }
+  ],
+  "mechanism": "W self-interstitial translation and reorientation",
+  "expect": "Keep for migration/reorientation; compare 251-atom 5x5x5+1 only if ideal straight crowdion is required.",
+  "system": "W <111> self-interstitial (129; 0 fixed)",
+  "construction": "129 W in 128-site BCC host, analytical crowdion-like core, near periodic edge. Caveat: Independent unrelaxed construction, not authors' DFT coordinates.",
+  "caveat": "129-atom 4x4x4+1 crowdion-like seed relaxed to an inclined split interstitial; observed 0.172–0.180 eV translation and ~0.220 eV reorientation in old Lite."
+ },
+ "L07": {
+  "short": "L07",
+  "citation": "Torayev 2020",
+  "links": [
+   {
+    "href": "https://doi.org/10.1021/acs.jpcc.0c04594",
+    "label": "Torayev 2020"
+   }
+  ],
+  "mechanism": "Proton diffusion in Y-doped BaZrO3",
+  "expect": "Check proton transfer and OH reorientation separately; note strong dopant proximity and small supercell.",
+  "system": "Hydrated Y:BaZrO3 proton (41; 0 fixed)",
+  "construction": "Ba8Zr7YO24H, 12.5% Y charge compensation; proton near boundary. Caveat: Proton/Y positions constructed; not author-relaxed state.",
+  "caveat": "Ba8Zr7YO24H, 12.5% Y dopant; proton and dopant positions constructed."
+ },
+ "O01": {
+  "short": "O01",
+  "citation": "Over 2000 / Liu 2001",
+  "links": [
+   {
+    "href": "https://doi.org/10.1063/1.1353584",
+    "label": "Over 2000 / Liu 2001"
+   }
+  ],
+  "mechanism": "CO oxidation on RuO2(110)",
+  "expect": "There is CO2-like bond formation in the saved geometry set, but verify which saddle connects it to CO + lattice oxygen; enlarge short lateral dimension only if artifacts matter.",
+  "system": "CO oxidation on RuO2(110) (220; 24 fixed)",
+  "construction": "2x2 slab, two CO on one face, diagonal separation; reduced coverage, central fixed. Caveat: 6.21 A shortest lateral cell; finite-size effect not tested.",
+  "caveat": "220 atoms and short lateral repeat 6.212 A; intact CO seed C-O 1.159 A. Five saved other minima (m012-m016) have a surface O-C-O-like fragment with C-O distances about 1.21 and 1.33 A."
+ },
+ "O02": {
+  "short": "O02",
+  "citation": "Binninger & Doublet 2022",
+  "links": [
+   {
+    "href": "https://doi.org/10.1039/D2EE00158F",
+    "label": "Binninger & Doublet 2022"
+   }
+  ],
+  "mechanism": "O–O coupling on IrO2(110)",
+  "expect": "Look for formation of a new O–O bond, not only rotation or desorption; specify whether electrochemical model is required.",
+  "system": "O-O coupling on IrO2(110) (272; 48 fixed)",
+  "construction": "2x2 slab with oxygen-rich termination on BOTH faces; central fixed. Caveat: Exact electrochemical/spin/PES unavailable; optional product excluded.",
+  "caveat": "272 atoms; oxygen-rich termination on both faces. Electrochemical potential / surface redox not modeled by coordinates alone."
+ },
+ "O03": {
+  "short": "O03",
+  "citation": "Kowalski, Meyer & Marx 2009",
+  "links": [
+   {
+    "href": "https://doi.org/10.1103/PhysRevB.79.115410",
+    "label": "Kowalski, Meyer & Marx 2009"
+   }
+  ],
+  "mechanism": "Water adsorption/dissociation at TiO2 vacancy",
+  "expect": "Confirm water stays at the vacancy and reaction is dissociation, proton transfer or migration as intended.",
+  "system": "Water on TiO2(110) vacancy (290; 96 fixed)",
+  "construction": "Six-Ti-trilayer 4x2 model, water + bridging O vacancy near side; bottom fixed. Caveat: Unpassivated UMA alternative, not source pseudo-H surface.",
+  "caveat": "290 atoms with a bridging vacancy and one H2O; saved minimum has two O–H distances ~0.974 and 0.995 Å."
+ },
+ "O04": {
+  "short": "O04",
+  "citation": "Li et al. 2011",
+  "links": [
+   {
+    "href": "https://doi.org/10.1039/C1CC11226K",
+    "label": "Li et al. 2011"
+   }
+  ],
+  "mechanism": "O vacancy exchange on CeO2(111)",
+  "expect": "Check vacancy location and O-site exchange; treat Ce redox energetics cautiously.",
+  "system": "CeO2(111) vacancy exchange (107; 12 fixed)",
+  "construction": "p(3x4), three O-Ce-O trilayers, only bottommost 12 O fixed. Caveat: Ce3+/DFT+U localization not encoded.",
+  "caveat": "107-atom ceria slab with only 12 bottom O fixed; Ce3+ and DFT+U localization not specified."
+ },
+ "O05": {
+  "short": "O05",
+  "citation": "Tahini 2016",
+  "links": [
+   {
+    "href": "https://doi.org/10.1021/acscatal.6b00937",
+    "label": "Tahini 2016"
+   }
+  ],
+  "mechanism": "Bulk O vacancy diffusion in SrCoO3",
+  "expect": "Check O-vacancy transport and bulk composition; do not move this into oxide-surface group.",
+  "system": "SrCoO3 bulk oxygen vacancy (134; 0 fixed)",
+  "construction": "Sr27Co27O80 3x3x3 fully periodic vacancy; bulk group, retain ID O05. Caveat: Co spin/redox and literature migration supercell unverified.",
+  "caveat": "134-atom fully periodic SrCoO3-x (no slab); old-to-new seed maxdev 0.175 Å. Co magnetism / oxidation can control vacancy barriers."
+ },
+ "O06": {
+  "short": "O06",
+  "citation": "Posada-Borbon & Gronbeck 2021",
+  "links": [
+   {
+    "href": "https://doi.org/10.1021/acscatal.1c01707",
+    "label": "Posada-Borbon & Gronbeck 2021"
+   }
+  ],
+  "mechanism": "CO2 and formate (HCOO) on hydroxylated In2O3(110)",
+  "expect": "Treat as a distinct formate state; relabel in viewer and avoid mistaking it for CO2.",
+  "system": "In2O3(110) with CO2 or HCOO (two author intermediates)",
+  "construction": null,
+  "caveat": "Author HCOO intermediate. Carbon is bonded to H (1.113 Å) and two O (1.268, 1.279 Å). The source explorer incorrectly calls this CO2."
+ },
+ "O07": {
+  "short": "O07",
+  "citation": "Vo 2013 / Kiss 2011",
+  "links": [
+   {
+    "href": "https://doi.org/10.1021/jp200146v",
+    "label": "Vo 2013 / Kiss 2011"
+   }
+  ],
+  "mechanism": "Methanol on ZnO(10-10)",
+  "expect": "Check whether O–H transfer / dissociation occurs and whether 0.5 ML is the desired regime.",
+  "system": "Methanol on ZnO(10-10) (216; 96 fixed)",
+  "construction": "4 molecular CH3OH on 4x2 terrace; 0.5 ML; six bilayers, bottom six planes fixed. Caveat: Slab thickness/mask/placements are proposed, not author-relaxed.",
+  "caveat": "216 atoms with four molecular CH3OH, each has C–O ~1.442 Å, at 0.5 ML. Old-to-new seed maxdev 0.172 Å."
+ },
+ "O08": {
+  "short": "O08",
+  "citation": "Ovcharenko, Voloshina & Sauer 2016",
+  "links": [
+   {
+    "href": "https://doi.org/10.1039/C6CP05313K",
+    "label": "Ovcharenko, Voloshina & Sauer 2016"
+   }
+  ],
+  "mechanism": "Water on Fe2O3(0001)",
+  "expect": "Check water adsorption/proton transfer; review fixed central layers and magnetic/redox validity.",
+  "system": "Water on Fe2O3(0001) (143; 92 fixed)",
+  "construction": "2x2 single-Fe termination, one-sided H2O at 0.25 ML; center 13/21 atomic planes fixed. Caveat: Water orientation unrelaxed; asymmetric slab intentionally.",
+  "caveat": "143 atoms, 92 fixed; H remains bonded to O in saved minimum. Fe magnetic states and surface termination may matter."
+ },
+ "_variants": {
+  "L01_I_Si65": {
+   "mechanism": "Si self-interstitial migration (2×2×2 cell)"
+  },
+  "L01_V_Si215": {
+   "mechanism": "Si vacancy migration (3×3×3 cell)"
+  }
+ },
+ "_source": "Literature review of the original seeds, 2026-11-13 (SADDLEBENCH_REACTION_VIEWERS_MIC_FIXED_REDOWNLOAD_20261114). Re-seeded structures keep the review of their family code; caveats may describe the original seed."
+}

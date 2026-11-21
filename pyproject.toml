@@ -12,6 +12,7 @@ saddlebench = "saddlebench.public_entrypoint:main"
 [tool.setuptools.packages.find]
 include = ["saddlebench*"]
 [tool.setuptools.package-data]
-"saddlebench.reference" = ["uma_aligned.csv", "uma_motif.json"]
+"saddlebench.reference" = ["uma_aligned.csv", "uma_motif.json", "uma_explorer.json", "uma_literature.json"]
+"saddlebench.explorer" = ["vendor/VENDOR.json", "vendor/web/*", "vendor/build/*.py"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]

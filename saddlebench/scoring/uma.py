@@ -52,13 +52,14 @@ class SeedScorer:
         )["matches"]
         return matches[0] if matches else None
 
-    def score(self, predictions, *, group_outside=True, on_prediction=None):
+    def score(self, predictions, *, group_outside=True, on_prediction=None, known=()):
+        """known: nearest results already computed for the first len(known) predictions (same scorer), reused as is."""
         hits = {threshold: set() for threshold in THRESHOLDS}
         outside = []
         count = unmatched = 0
         for prediction in predictions:
+            nearest = known[count] if count < len(known) else self.nearest(prediction)
             count += 1
-            nearest = self.nearest(prediction)
             if on_prediction is not None:
                 on_prediction(nearest)
             if nearest is None:
@@ -136,12 +137,14 @@ class UmaScoring:
         }
         self.references = defaultdict(dict)
         self.aligned_counts = defaultdict(int)
+        self.aligned_ids = defaultdict(set)
         aligned = {(row["minimum_id"], row["saddle_id"]) for row in csv.DictReader(overlay.splitlines())}
         for row in dataset.table("reference").to_pylist():
             mid, sid = row["minimum_id"], row["saddle_id"]
             if (include_unconfident or confidence_sources(self.seeds[mid])) and row["barrier_eV"] < 1.0:
                 if (mid, sid) in aligned:
                     self.aligned_counts[mid] += 1
+                    self.aligned_ids[mid].add(sid)
                 else:
                     self.references[mid][sid] = row
 

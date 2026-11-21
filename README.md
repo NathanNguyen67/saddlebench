@@ -22,6 +22,10 @@ saddlebench baseline --dataset literature --attempts benchmarks/uma/attempts.par
 
 The quick example should score four frames, find one of one eligible reference group at all three cutoffs, and report two unmatched frames. The public baseline should report **28,000 attempts**, **26,284 converged**, and **22,880 geometries scored** using the public group representatives. It uses the 28 confident seeds in the historical 36-seed prefilled cohort. [Baseline results](benchmarks/uma/SUMMARY.md)
 
+### How long it takes
+
+Measured on a 16-core LS6 node with the cache on local disk (Nov 21, 2026): the full `baseline` command above takes about 70 s with `--workers 4` and 40 s with `--workers 16`, plus a first-run download of about 2 GB. Most of that time is the 409,348 SaddleMotif proposal frames behind the two motif-augmented rows; `--no-motif` takes about 17 s. Scoring costs 0.2–0.5 ms per predicted frame, the same for arbitrary dataset saddles as for benchmark frames. `score` on one case takes about 17 s the first time, mostly scoring the published baseline methods for comparison, and about 4 s afterwards, because that comparison is cached. Keep the Hugging Face cache on a local disk: on a Lustre scratch file system, reads are several times slower.
+
 ## Choose a dataset and download seeds
 
 ```sh
@@ -59,9 +63,17 @@ saddlebench score --dataset lit_oc20 --submission-dir predictions \
   --recall-only --output my-dataset.csv --html my-dataset.html
 ```
 
-Open the HTML in a browser. Its dataset selector filters both results and the catalog of all published seeds. The seed filter shows eligible and below-threshold cases. The results table contains the cases or baseline methods scored by the command that made the report. To populate results across all datasets with your own predictions, use `score --dataset all` with a file for every confident case. Add `--include-unconfident` to `score` or `baseline` to include published seeds below the threshold. A dataset submission then needs one file for every selected seed. Use the same flag with `seed --dataset` to download those starting minima. Predictions are scored locally.
+Open the HTML in a browser. Its dataset selector filters both results and the catalog of all published seeds. The seed filter shows eligible and below-threshold cases. To populate results across all datasets with your own predictions, use `score --dataset all` with a file for every confident case. Add `--include-unconfident` to `score` or `baseline` to include published seeds below the threshold. A dataset submission then needs one file for every selected seed. Use the same flag with `seed --dataset` to download those starting minima. Predictions are scored locally.
 
-The HTML links to one companion `*-missed.html` for all scored cases. Open it offline to filter missed reference groups by dataset, case, method and cutoff, inspect their barriers and displacements, and scrub through the starting minimum, saddle and a seed-connected product. Keep the two HTML files together. The geometry interpolation joins saved frames and does not represent a calculated reaction path.
+The `score` report shows your submission beside the four published baseline methods on the same seeds: Sella PRFO, TS-BFGS dimer, and each one augmented with SaddleMotif proposals. These rows come from the prefilled attempts (bundled table in a checkout, otherwise the pinned public table) and the published proposals, so a seed without prefilled attempts shows your row only. Use `--no-baseline` to leave them out, and `--workers N` to compute them in parallel the first time. The CSV or JSON output contains your submission only.
+
+### Structure explorer
+
+Every HTML report writes a `*-explorer/` folder beside it. Keep the report and the folder together. Its index shows one card per scored structure, animating a representative reaction on the starting minimum, with how many reference saddles the chosen method found and missed. A table view lists the same structures. Each structure page groups saddles into SaddleMotif classes. Reference saddles are marked **Found** or **Missed** for the method and cutoff chosen at the top. Use the "Missed reference saddles" filter, or click a structure name in the results table, to go straight to the misses. A class opens its reactions with the reactant → saddle → product animation, energies, Search-mode curvature, DoubleMin endpoints and products. Literature structures carry their citation and intended reaction under the title.
+
+Viewer controls: **Supercell** repeats the cell, **Fade others** makes atoms that are not moving, pinned or selected translucent, and clicking an atom pins it with its index (or type indices under Pin atoms). Explorer data are SaddleMotif Explorer payloads built from the same campaign database as the pinned export. They are fetched once per release and checksum-verified. The interpolation between stored frames is schematic, not a computed path. Curvature is along the final Search mode, not a Hessian eigenvalue.
+
+Glossary used in the explorer: a **saddle** is one saddle group with a complete DoubleMin. A **reaction** is a saddle with the two minima its DoubleMin reached. A **seed reaction** is a distinct pair of end minima that includes the starting minimum, barrier below 1 eV. A **reference saddle** is a seed-reaction saddle that the benchmark scores; aligned slides are excluded.
 
 For one case, `--elapsed-seconds` and `--physical-pes-calls` record optional search costs. `--recall-only` reports all unmatched frames and skips their distinct-group count. Omit it to group unmatched frames against earlier unmatched representatives in submission order. Unmatched frames can include predictions corresponding to excluded aligned slides.
 

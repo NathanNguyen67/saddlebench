@@ -10,8 +10,30 @@ from ase.io import iread
 from saddlebench.reference.uma import REVISION, UmaDataset, confidence_sources
 from saddlebench.scoring.uma import UmaScoring, geometry
 from saddlebench.uma_catalog import add_dataset_argument, check_dataset, select_cases
-from saddlebench.uma_metrics import rate_totals
+from saddlebench.uma_metrics import METHOD_LABELS, rate_totals
 from saddlebench.uma_scoreboard import write_scoreboard
+
+SUBMISSION_LABEL = "Your submission"
+
+
+def write_report(args, scoring, rows, matched, dataset):
+    """HTML scoreboard for a submission, beside the published four-method baseline on the same seeds."""
+    labels = {**METHOD_LABELS, "submission": SUBMISSION_LABEL}
+    comparison, baseline_matched, timelines = [], {}, {}
+    if not args.no_baseline:
+        from saddlebench.uma_baseline import default_comparison
+        comparison, baseline_matched, timelines = default_comparison(
+            scoring, {mid for mid, _ in matched}, cache_dir=args.cache_dir, workers=args.workers)
+    if not comparison:
+        write_scoreboard(args.html, scoring, rows, dataset=dataset, matched=matched, labels=labels,
+                         cache_dir=args.cache_dir, explorer_payloads=args.explorer_dir)
+        return
+    submitted = [dict(row, method_id="submission", geometry_source="submission") for row in rows]
+    combined = sorted(comparison + submitted, key=lambda row: (row["parent_id"], row["method_id"] != "submission",
+                                                               row["method_id"]))
+    write_scoreboard(args.html, scoring, combined, dataset=dataset, baseline=True,
+                     matched={**baseline_matched, **matched}, timelines=timelines, labels=labels,
+                     cache_dir=args.cache_dir, explorer_payloads=args.explorer_dir)
 
 
 def score_case(scoring, seed, scorer, path, *, group_outside):
@@ -65,7 +87,7 @@ def score_dataset(parser, scoring, args):
         if args.output:
             handle.close()
     if args.html:
-        write_scoreboard(args.html, scoring, rows, dataset=args.dataset, matched=matched)
+        write_report(args, scoring, rows, matched, args.dataset)
     return 0
 
 
@@ -101,6 +123,10 @@ def main(argv):
     parser.add_argument("--confident-only", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--include-unconfident", action="store_true", help="Also score published seeds below confidence")
     parser.add_argument("--recall-only", action="store_true", help="Skip grouping unmatched predictions")
+    parser.add_argument("--no-baseline", action="store_true",
+                        help="Leave the published Sella, TS-BFGS dimer and motif-augmented rows out of the HTML")
+    parser.add_argument("--workers", type=int, default=1, help="Parallel processes for the baseline comparison")
+    parser.add_argument("--explorer-dir", type=Path, help=argparse.SUPPRESS)  # local explorer payloads (testing)
     args = parser.parse_args(argv)
     if args.html and (args.html.exists() or args.output and args.html.resolve() == args.output.resolve()):
         parser.error("--html must be a new path distinct from --output")
@@ -130,6 +156,7 @@ def main(argv):
             handle.write(rendered + "\n")
     print(rendered)
     if args.html:
-        write_scoreboard(args.html, scoring, [case_result_row(report)], dataset=report["dataset"],
-                         matched={(mid, "submission"): report["matched_saddle_ids_by_threshold"]})
+        row = case_result_row(report)
+        write_report(args, scoring, [row], {(mid, "submission"): report["matched_saddle_ids_by_threshold"]},
+                     report["dataset"])
     return 0
