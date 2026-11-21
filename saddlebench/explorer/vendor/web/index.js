@@ -7,7 +7,7 @@ window.SM = window.SM || {};
   const data = JSON.parse(document.getElementById("index-data").textContent);
   const rows = data.rows;
   const methods = data.methods || [];
-  const state = { q: "", ds: new Set(), view: "cards", key: config.mode === "bench" ? "reference" : "reactions", dir: -1,
+  const state = { q: "", ds: new Set(), view: "cards", key: config.mode === "bench" ? "reference" : "seedReactions", dir: -1,
     method: methods[0]?.id, cutoff: "0.20", missedOnly: false };
   try { const saved = localStorage.getItem("sm-index-view"); if (saved === "table" || saved === "cards") state.view = saved; } catch (error) { /* storage unavailable */ }
   const q0 = new URLSearchParams(location.hash.slice(1));
@@ -116,7 +116,7 @@ window.SM = window.SM || {};
     const list = rows.filter((r) => (!state.ds.size || state.ds.has(r.dataset))
       && (!state.missedOnly || (scoreOf(r)?.missed > 0))
       && (!query || `${r.parent} ${r.short} ${r.mechanism || ""} ${r.formula || ""}`.toLowerCase().includes(query)));
-    const f = cols.find((c) => c[0] === state.key)[3];
+    const f = (cols.find((c) => c[0] === state.key) || cols[0])[3];
     list.sort((a, b) => { const x = f(a); const y = f(b); return (x < y ? -1 : x > y ? 1 : 0) * state.dir || a.parent.localeCompare(b.parent); });
     shown.textContent = `${list.length} of ${rows.length} structures`;
     grid.hidden = state.view !== "cards";
