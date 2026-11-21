@@ -65,7 +65,7 @@ window.SM = window.SM || {};
     const node = h("a", { class: "card structure-card", href: link(r) },
       canvas,
       h("span", { class: "card-head" }, h("b", {}, r.short), h("span", {}, r.formula || "")),
-      r.mechanism ? h("span", { class: "card-mech" }, r.mechanism) : h("span", { class: "card-mech muted" }, r.name),
+      r.mechanism ? h("span", { class: "card-mech" }, r.mechanism) : r.name !== r.short ? h("span", { class: "card-mech muted" }, r.name) : null,
       h("span", { class: "card-facts" }, [fmt.count(r.atoms, "atom"), fmt.count(r.classes, "class"),
         config.mode === "bench" ? fmt.count(r.score?.reference ?? r.reference ?? 0, "reference saddle") : fmt.count(r.seedReactions, "seed reaction")].join(" · ")),
       scoreLine);
@@ -80,7 +80,7 @@ window.SM = window.SM || {};
     const s = scoreOf(entry.row);
     if (!s) { entry.scoreLine.replaceChildren(); return; }
     const pct = s.reference ? (100 * s.found) / s.reference : 0;
-    entry.scoreLine.replaceChildren(
+    SM.fill(entry.scoreLine,
       h("span", { class: "meter", title: `${s.found} of ${s.reference} found` }, h("i", { style: `width:${pct.toFixed(1)}%` })),
       h("span", {}, `${s.found}/${s.reference} found`), s.missed ? h("span", { class: "missed-count" }, ` · ${s.missed} missed`) : null);
   }

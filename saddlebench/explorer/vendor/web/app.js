@@ -50,14 +50,14 @@ window.SM = window.SM || {};
         score.cutoffs.map((c) => h("option", { value: c, selected: c === score.cutoff }, `${c} Å`)));
       const update = () => {
         const t = score.totals();
-        totals.replaceChildren(h("b", {}, `${t.found} of ${t.reference}`), " reference saddles found",
+        SM.fill(totals, h("b", {}, `${t.found} of ${t.reference}`), " reference saddles found",
           t.missed ? h("span", { class: "missed-count" }, ` · ${t.missed} missed`) : null);
         const q2 = hashState(); q2.set("m", score.method); q2.set("x", score.cutoff); writeHash(q2);
       };
       score.listeners.add(update);
       update();
       const notes = config.score.notes ? h("span", { class: "muted score-note" }, config.score.notes) : null;
-      document.getElementById("scorebar").replaceChildren(h("label", { class: "field-inline" }, "Scored", method), h("label", { class: "field-inline" }, "at", cutoff), totals, notes);
+      SM.fill(document.getElementById("scorebar"), h("label", { class: "field-inline" }, "Scored", method), h("label", { class: "field-inline" }, "at", cutoff), totals, notes);
       document.getElementById("scorebar").hidden = false;
     }
 
