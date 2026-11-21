@@ -181,6 +181,12 @@ SM.Score = class Score {
     this.groupOf = new Map();
     Object.entries(data.reference).forEach(([group, info]) => (info.members || [group]).forEach((sid) => this.groupOf.set(sid, group)));
     this.excludedOf = new Map(Object.entries(data.excluded || {}));
+    /* Optional symmetry families: groups related by a symmetry operation of the seed (one physical mechanism). */
+    this.familyOf = new Map();
+    Object.entries(data.reference).forEach(([group, info]) => { if (info.family) this.familyOf.set(group, info.family); });
+    this.familySize = new Map();
+    this.familyOf.forEach((family) => this.familySize.set(family, (this.familySize.get(family) || 0) + 1));
+    this.seeds = new Set(data.seeds || []);
     this.listeners = new Set();
     this.found = new Map();
   }
@@ -208,12 +214,35 @@ SM.Score = class Score {
     return this.foundSet().has(group) ? "found" : "missed";
   }
 
+  /* Family of a reference group (its own id when it has no symmetry partner). */
+  family(group) { return this.familyOf.get(group) || group; }
+
+  /* Reference groups in the same symmetry family, excluding the group itself. */
+  partners(group) {
+    const family = this.familyOf.get(group);
+    if (!family) return [];
+    return Object.keys(this.data.reference).filter((g) => g !== group && this.familyOf.get(g) === family);
+  }
+
+  /* A missed group whose symmetry-equivalent partner was found: same mechanism, other image. */
+  imageFound(group) { return this.partners(group).some((g) => this.foundSet().has(g)); }
+
+  pill(reaction) {
+    const state = this.status(reaction);
+    if (state === "missed" && this.imageFound(this.group(reaction))) return SM.h("span", { class: "pill-missed pill-image", title: "Missed, but a symmetry-equivalent saddle (same mechanism, mirrored or rotated) was found" }, "Missed · image found");
+    return SM.statusPill(state);
+  }
+
+  nearNull(reaction) { const g = this.group(reaction); return g ? this.data.reference[g].nearNull || null : null; }
+
   /* Why a saddle is outside the reference (shown in the inspector). */
   outsideReason(reaction) {
     const r = this.store.reactions[reaction];
     const excluded = this.excludedOf.get(r.saddle);
     if (excluded) return excluded;
     if (!r.seedConnected) return "Not connected to the seed";
+    if (this.seeds.size && !this.seeds.has(r.reactant) && !this.seeds.has(r.product))
+      return `Starts from another seed minimum (${r.reactant.slice(0, 10)}), which is not a benchmark case; this page scores only ${[...this.seeds].map((s) => s.slice(0, 10)).join(", ")}`;
     if (r.barrier >= 1) return "Barrier at or above 1 eV";
     return "Not a reference group (see the dataset notes)";
   }
@@ -222,23 +251,27 @@ SM.Score = class Score {
     const groups = new Set();
     cls.reactions.forEach((i) => { const g = this.group(i); if (g) groups.add(g); });
     const found = this.foundSet();
-    let missed = 0;
-    groups.forEach((g) => { if (!found.has(g)) missed += 1; });
-    return { reference: groups.size, missed, found: groups.size - missed };
+    let missed = 0; let images = 0;
+    groups.forEach((g) => { if (!found.has(g)) { missed += 1; if (this.imageFound(g)) images += 1; } });
+    return { reference: groups.size, missed, found: groups.size - missed, images };
   }
 
   totals() {
     const all = Object.keys(this.data.reference);
     const found = this.foundSet();
     const hit = all.filter((g) => found.has(g)).length;
-    return { reference: all.length, found: hit, missed: all.length - hit };
+    const families = new Set(all.map((g) => this.family(g)));
+    const familiesFound = new Set(all.filter((g) => found.has(g)).map((g) => this.family(g)));
+    return { reference: all.length, found: hit, missed: all.length - hit,
+      families: this.familyOf.size ? families.size : null, familiesFound: familiesFound.size };
   }
 };
 
 SM.scoreBadge = (counts) => {
   if (!counts || !counts.reference) return null;
   if (!counts.missed) return SM.h("span", { class: "tag tag-found" }, `All ${counts.reference} reference found`);
-  return SM.h("span", { class: "tag tag-missed" }, `${counts.missed} of ${counts.reference} reference missed`);
+  return SM.h("span", { class: "tag tag-missed", title: counts.images ? "Missed saddles whose mirror or rotated partner was found count as image found" : null },
+    `${counts.missed} of ${counts.reference} reference missed${counts.images ? ` (${counts.images} image found)` : ""}`);
 };
 
 SM.statusPill = (status) => (status === "missed" ? SM.h("span", { class: "pill-missed" }, "Missed")

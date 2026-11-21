@@ -286,6 +286,50 @@ def test_explorer_marks_found_and_missed_reference_saddles(export, tmp_path):
                                                       "sella": {"0.20": 0, "0.10": 0, "0.05": 0}}}
 
 
+
+def test_explorer_overlay_carries_symmetry_labels_without_changing_scores(export):
+    from saddlebench.explorer import score_overlay, symmetry
+    from saddlebench.scoring.uma import UmaScoring
+
+    scoring = UmaScoring(UmaDataset(export.parent / "cache"))
+    assert symmetry(scoring) == {}  # the published file targets the real export's digest, not this fixture
+    payload = _explorer_payload("parent", ["saddle"])
+    matched = {("seed", "sella"): {"0.20": [], "0.10": [], "0.05": []}}
+    families = {"seed": {"operations": [{"label": "identity", "seed_maxdev": 0.0}, {"label": "mirror ⟂ x at 1.50 Å", "seed_maxdev": 0.01}],
+                         "families": [["mirror_partner", "saddle"]],
+                         "links": {"saddle": [{"saddle": "mirror_partner", "operation": 1, "maxdev": 0.04}]},
+                         "near_null": {"saddle": {"product": "p0", "maxdev": 0.21, "dE": 0.05}}}}
+    plain = score_overlay(scoring, "parent", {"seed"}, matched, {"sella": "Sella"}, payload)
+    labelled = score_overlay(scoring, "parent", {"seed"}, matched, {"sella": "Sella"}, payload, families)
+    assert plain["found"] == labelled["found"] and set(plain["reference"]) == set(labelled["reference"])
+    assert labelled["seeds"] == ["seed"]
+    entry = labelled["reference"]["saddle"]
+    assert entry["family"] == "mirror_partner" and entry["via"] == "mirror ⟂ x at 1.50 Å"
+    assert entry["nearNull"]["maxdev"] == 0.21
+    assert "family" not in plain["reference"]["saddle"]
+
+
+def test_symmetry_builder_finds_a_mirror_and_relabels_atoms():
+    import importlib.util
+    import numpy as np
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location("build_uma_symmetry", Path(__file__).resolve().parents[1] / "scripts" / "build_uma_symmetry.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    cell = np.diag([10.0, 12.0, 20.0])
+    # mirror-symmetric seed about x = 5: two Pt at x = 4 and 6, one O on the plane
+    seed = {"numbers": np.array([78, 78, 8]), "pbc": (True, True, False), "cell_angstrom": cell,
+            "positions_angstrom": np.array([[4.0, 6.0, 10.0], [6.0, 6.0, 10.0], [5.0, 7.0, 11.0]])}
+    ops = module.seed_symmetries(seed)
+    labels = [module.describe(op) for op in ops]
+    assert labels[0] == "identity" and any(label.startswith("mirror ⟂ x at 5.00") for label in labels)
+    mirror = next(op for op in ops if module.describe(op).startswith("mirror ⟂ x"))
+    saddle = {**seed, "positions_angstrom": seed["positions_angstrom"] + np.array([[0, 0, 0], [0, 0, 0], [0.4, 0, 0]])}
+    image = module.transform(mirror, saddle)["positions_angstrom"]
+    assert np.allclose(image[2], [4.6, 7.0, 11.0]) and np.allclose(sorted(image[:2, 0]), [4.0, 6.0])
+
+
 def test_literature_notes_follow_the_family_code():
     from saddlebench.explorer import literature
 

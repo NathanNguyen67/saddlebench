@@ -92,10 +92,22 @@ SM.Inspector = class Inspector {
     let bench = null;
     if (score) {
       const state = score.status(this.reaction);
+      const group = score.group(this.reaction);
+      const info = group ? score.data.reference[group] : null;
+      const partners = group ? score.partners(group) : [];
+      const near = score.nearNull(this.reaction);
+      const short = (sid) => sid.slice(4, 10);
+      const foundSet = score.foundSet();
       bench = h("section", { class: `inspect-block bench-${state || "outside"}` },
         h("h3", {}, "Benchmark"),
-        state ? h("p", {}, SM.statusPill(state), ` by ${score.label()} at ${score.cutoff} Å`)
-          : h("p", { class: "muted" }, `Not scored: ${score.outsideReason(this.reaction)}.`));
+        state ? h("p", {}, score.pill(this.reaction), ` by ${score.label()} at ${score.cutoff} Å`)
+          : h("p", { class: "muted" }, `Not scored: ${score.outsideReason(this.reaction)}.`),
+        info && Math.abs(info.barrier - r.barrier) >= 0.005
+          ? h("p", { class: "note" }, `Scored barrier ${fmt.ev(info.barrier)} eV, from the seed energy. The ${fmt.ev(r.barrier)} eV above is from this reaction's DoubleMin endpoint.`) : null,
+        partners.length ? h("p", { class: "note" }, `Symmetry family of ${partners.length + 1}: `,
+          partners.map((g, i) => [i ? ", " : "", h("b", {}, short(g)), ` (${foundSet.has(g) ? "found" : "missed"})`]),
+          `. Distinct saddles related by symmetries of the seed${info.via ? ` (this one by ${info.via})` : ""}: one mechanism, which the benchmark counts once per saddle.`) : null,
+        near ? h("p", { class: "note" }, `Near-null: the product is only ${near.maxdev.toFixed(2)} Å from the seed (${fmt.signed(near.dE)} eV), just past the 0.2 Å identity cutoff. It may be the seed itself.`) : null);
     }
     const cls = this.actions.currentClass ? this.actions.currentClass() : null;
     const classCurvature = cls ? SM.classCurvature(this.store, cls) : null;

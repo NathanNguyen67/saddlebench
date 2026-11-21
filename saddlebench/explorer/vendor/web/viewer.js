@@ -242,33 +242,38 @@ SM.Viewer = class Viewer {
     }
   }
 
-  /* Home cell outline: the full box for bulk cells, the in-plane parallelogram at the mean height for slabs. */
+  /* Home cell: the full box (all three lattice vectors, slabs included) plus labelled a, b, c arrows at its origin. */
   drawCell(ctx) {
     const L = this.lattice;
     const axes = this.repeatAxes();
-    /* The drawn cell is centred on the movers along wrapped axes (see wrapShifts). */
+    /* The drawn cell is centred on the movers along wrapped axes (see wrapShifts); c starts at 0 for slabs. */
     const c = this.lastCentre ? L.fractional(...this.lastCentre) : [0.5, 0.5, 0.5];
     const o = c.map((value, k) => (axes[k] ? value - 0.5 : 0));
-    const p = (u, v, w, z) => {
+    const p = (u, v, w) => {
       const x = L.cartesian(u + o[0], v + o[1], w + o[2]);
-      return this.project(x[0], x[1], z === undefined ? x[2] : z, this.view);
+      return this.project(x[0], x[1], x[2], this.view);
     };
-    ctx.strokeStyle = getComputedStyle(this.canvas).getPropertyValue("--muted");
+    const style = getComputedStyle(this.canvas);
+    const muted = style.getPropertyValue("--muted").trim();
+    ctx.strokeStyle = muted;
     ctx.lineWidth = 1;
     ctx.setLineDash([5, 4]);
     ctx.beginPath();
-    if (this.repeatAxes()[2]) {
-      const edges = [[[0,0,0],[1,0,0]],[[0,1,0],[1,1,0]],[[0,0,1],[1,0,1]],[[0,1,1],[1,1,1]],[[0,0,0],[0,1,0]],[[1,0,0],[1,1,0]],
-        [[0,0,1],[0,1,1]],[[1,0,1],[1,1,1]],[[0,0,0],[0,0,1]],[[1,0,0],[1,0,1]],[[0,1,0],[0,1,1]],[[1,1,0],[1,1,1]]];
-      edges.forEach(([a, b]) => { const A = p(...a); const B = p(...b); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); });
-    } else {
-      const z = this.store.structure.positions.reduce((m, q) => m + q[2], 0) / this.store.n;
-      const corners = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([u, v]) => p(u, v, 0, z));
-      corners.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])));
-      ctx.closePath();
-    }
+    const edges = [[[0,0,0],[1,0,0]],[[0,1,0],[1,1,0]],[[0,0,1],[1,0,1]],[[0,1,1],[1,1,1]],[[0,0,0],[0,1,0]],[[1,0,0],[1,1,0]],
+      [[0,0,1],[0,1,1]],[[1,0,1],[1,1,1]],[[0,0,0],[0,0,1]],[[1,0,0],[1,0,1]],[[0,1,0],[0,1,1]],[[1,1,0],[1,1,1]]];
+    edges.forEach(([a, b]) => { const A = p(...a); const B = p(...b); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); });
     ctx.stroke();
     ctx.setLineDash([]);
+    const origin = p(0, 0, 0);
+    const ink = style.getPropertyValue("--ink").trim() || muted;
+    ctx.font = "600 12px system-ui, sans-serif";
+    [["a", [1, 0, 0]], ["b", [0, 1, 0]], ["c", [0, 0, 1]]].forEach(([name, f]) => {
+      const end = p(...f);
+      this.arrow(ctx, origin, end, muted, 1.6);
+      const dx = end[0] - origin[0]; const dy = end[1] - origin[1]; const n = Math.hypot(dx, dy) || 1;
+      ctx.fillStyle = ink;
+      ctx.fillText(name, end[0] + (dx / n) * 8 - 3, end[1] + (dy / n) * 8 + 4);
+    });
   }
 
   arrow(ctx, from, to, colour, width = 2) {

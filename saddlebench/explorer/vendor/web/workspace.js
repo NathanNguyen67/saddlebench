@@ -6,7 +6,7 @@ SM.FAN_COLOURS = ["--p1", "--p2", "--p3", "--p4", "--p5", "--p6", "--p7", "--p8"
 SM.Workspace = class Workspace {
   constructor(root, store, renderer, callbacks) {
     Object.assign(this, { root, store, renderer, callbacks });
-    this.settings = new SM.ViewSettings({ radius: 11, focus: false, fade: 0.5 });
+    this.settings = new SM.ViewSettings({ radius: 11, focus: false, fade: 0 });
     this.refFilter = "all";
     if (store.score) store.score.listeners.add(() => { if (this.cls) { this.renderSide(); this.inspector.render(); } });
     this.tab = "reactions";
@@ -144,9 +144,10 @@ SM.Workspace = class Workspace {
           [["all", "All reactions"], ["reference", "Reference only"], ["missed", "Missed only"]].map(([v, t]) => h("option", { value: v, selected: v === this.refFilter }, t)))) : null),
       rows.length ? null : h("p", { class: "muted" }, "No reactions match these filters."),
       h("div", { class: "rows" }, rows.map((r) => h("button", { type: "button", class: `row${r.id === this.reaction ? " on" : ""}`, "data-reaction": r.id, onclick: () => this.select(r.id) },
-        h("span", { class: "row-main" }, h("b", {}, `${fmt.ev(r.barrier)} eV`), this.store.score ? SM.statusPill(this.store.score.status(r.id)) : null, h("span", {}, `→ ${this.store.label(r.product)}`)),
+        h("span", { class: "row-main" }, h("b", {}, `${fmt.ev(r.barrier)} eV`), this.store.score ? this.store.score.pill(r.id) : null, h("span", {}, `→ ${this.store.label(r.product)}`)),
         h("span", { class: "row-sub" }, `${r.saddle.slice(4, 10)} · ${fmt.count(r.motion.moved, "atom")} · ${fmt.signed(r.reactionEnergy)} eV${r.curvature === null || r.curvature === undefined ? "" : ` · κ ${r.curvature.toFixed(2)}`}`),
-        r.saddleMinima > 2 ? h("span", { class: "row-flag" }, `${r.saddleMinima} minima`) : null))),
+        r.saddleMinima > 2 ? h("span", { class: "row-flag" }, `${r.saddleMinima} minima`) : null,
+        this.store.score?.nearNull(r.id) ? h("span", { class: "row-flag", title: "The product is barely distinct from the seed" }, "near-null") : null))),
     );
     this.sidebar.querySelector(".row.on")?.scrollIntoView({ block: "nearest" });
   }

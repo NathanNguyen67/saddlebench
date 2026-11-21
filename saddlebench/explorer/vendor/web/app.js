@@ -51,7 +51,9 @@ window.SM = window.SM || {};
       const update = () => {
         const t = score.totals();
         SM.fill(totals, h("b", {}, `${t.found} of ${t.reference}`), " reference saddles found",
-          t.missed ? h("span", { class: "missed-count" }, ` · ${t.missed} missed`) : null);
+          t.missed ? h("span", { class: "missed-count" }, ` · ${t.missed} missed`) : null,
+          t.families !== null && t.families < t.reference
+            ? h("span", { class: "muted", title: "Reference saddles related by a symmetry of the seed (mirror, rotation) count once here" }, ` · ${t.familiesFound} of ${t.families} symmetry-distinct mechanisms`) : null);
         const q2 = hashState(); q2.set("m", score.method); q2.set("x", score.cutoff); writeHash(q2);
       };
       score.listeners.add(update);

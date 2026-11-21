@@ -159,6 +159,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, canvas:focus-vi
 .pill-missed, .pill-found { display: inline-block; padding: 0 7px; border-radius: 999px; font-size: 11px; font-weight: 700; }
 .pill-missed { background: var(--miss-soft); color: var(--miss); }
 .pill-found { background: var(--hit-soft); color: var(--hit); }
+.pill-image { background: transparent; box-shadow: inset 0 0 0 1px var(--miss); }
 .row-main .pill-missed, .row-main .pill-found { margin-right: auto; }
 .card-score:empty { display: none; }
 .bench-missed { box-shadow: inset 3px 0 0 var(--miss); }

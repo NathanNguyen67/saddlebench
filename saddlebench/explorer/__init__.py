@@ -6,7 +6,9 @@ scripts/vendor_explorer.py). SaddleBench supplies only data the explorer already
 * structure payloads (schema ``saddlemotif-explorer-v2``) built by SaddleMotif from the same campaign database as the
   pinned UMA export, fetched and checksum-verified from a release manifest (``reference/uma_explorer.json``);
 * a per-structure score overlay: reference groups (keyed by saddle ID) and, for each method and cutoff, the groups
-  found. The scorer decides identity by geometry; the overlay only names the groups it matched.
+  found. The scorer decides identity by geometry; the overlay only names the groups it matched. When
+  ``reference/uma_symmetry.json`` matches the scorer's reference digest, reference groups also carry their symmetry
+  family (saddles mapped onto each other by a symmetry of the seed) and a near-null flag. These are labels only.
 
 A SaddleMotif viewer change therefore needs only a re-vendor, and a payload rebuild only a new manifest.
 """
@@ -134,12 +136,37 @@ def payload_paths(parents, *, cache_dir=None, directory=None):
             for parent in parents if parent in data["payloads"]}
 
 
-def score_overlay(scoring, parent, seeds, matched, labels, payload):
-    """Reference groups of the structure's scored seeds, aligned-slide exclusions, and found groups per method."""
+def symmetry(scoring):
+    """Symmetry families and near-null products per seed (build_uma_symmetry.py), or {} when absent or stale."""
+    path = files("saddlebench.reference").joinpath("uma_symmetry.json")
+    if not path.is_file():
+        return {}
+    data = json.loads(path.read_text())
+    if data.get("hf_revision") != REVISION or data.get("reference_digest") != scoring.revision_digest:
+        return {}
+    return data["seeds"]
+
+
+def score_overlay(scoring, parent, seeds, matched, labels, payload, families=None):
+    """Reference groups of the structure's scored seeds, aligned-slide exclusions, and found groups per method.
+
+    families: symmetry() output; adds family/via/nearNull to reference groups (display only, scores unchanged)."""
     reference, excluded = {}, {}
+    families = {} if families is None else families
     for mid in seeds:
+        info = families.get(mid, {})
+        family_of = {sid: members[0] for members in info.get("families", ()) for sid in members}
+        operations = info.get("operations", [])
         for sid, row in scoring.references[mid].items():
-            reference[sid] = {"barrier": round(row["barrier_eV"], 4)}
+            entry = {"barrier": round(row["barrier_eV"], 4)}
+            if sid in family_of:
+                entry["family"] = family_of[sid]
+                link = (info.get("links", {}).get(sid) or [None])[0]
+                if link is not None and link["operation"] < len(operations):
+                    entry["via"] = operations[link["operation"]]["label"]
+            if sid in info.get("near_null", {}):
+                entry["nearNull"] = info["near_null"][sid]
+            reference[sid] = entry
         for sid in scoring.aligned_ids.get(mid, ()):
             excluded[sid] = "Aligned slide, excluded from the benchmark"
     found = {}
@@ -158,6 +185,7 @@ def score_overlay(scoring, parent, seeds, matched, labels, payload):
     return {
         "methods": [{"id": method, "label": labels[method]} for method in methods],
         "cutoffs": ["0.20", "0.10", "0.05"],
+        "seeds": sorted(seeds),
         "reference": reference,
         "excluded": excluded,
         "found": {method: {cutoff: sorted(ids) for cutoff, ids in found[method].items()} for method in methods},
@@ -178,6 +206,7 @@ def write_explorer(directory, scoring, matched, labels, *, cache_dir=None, paylo
     if not paths:
         return {}
     builder = _builder()
+    families = symmetry(scoring)
     raws, lits, scores = [], {}, {}
     for parent, path in sorted(paths.items()):
         raw = path.read_bytes()
@@ -185,7 +214,7 @@ def write_explorer(directory, scoring, matched, labels, *, cache_dir=None, paylo
         if payload.get("schema") != SCHEMA or payload["structure"]["parent"] != parent:
             raise ValueError(f"Unexpected explorer payload for {parent}: {path}")
         raws.append(raw)
-        scores[parent] = score_overlay(scoring, parent, seeds_by_parent[parent], matched, labels, payload)
+        scores[parent] = score_overlay(scoring, parent, seeds_by_parent[parent], matched, labels, payload, families)
         lit = literature(parent)
         if lit:
             lits[parent] = lit
