@@ -94,12 +94,18 @@ SM.Viewer = class Viewer {
       return index < 0 ? palette.neutral : SM.GROUP_COLOURS[index % SM.GROUP_COLOURS.length];
     }
     if (s.colour === "element") return element;
+    if (s.colour === "diff") {
+      const other = [...s.compare.keys()].find((id) => id !== this.reaction);
+      if (other === undefined) return element;
+      const diff = SM.frameDiff(this.store, this.reaction, 1, other, 1);
+      return SM.geo.ramp(Math.min(1, diff.per[atom] / Math.max(diff.max, 0.2)));
+    }
     if (s.colour === "displacement") return SM.geo.ramp(sizes[atom] / Math.max(zRange.maxSize, 0.5));
     if (s.colour === "height") return SM.geo.ramp((this.store.base[atom * 3 + 2] - zRange.low) / Math.max(zRange.high - zRange.low, 1));
     if (s.colour === "fixed") return this.store.fixed[atom] ? palette.fixed : palette.free;
     /* "highlight": element colours everywhere; movers keep full colour and get a ring (see isMover), the rest fade a little. */
     if (this.isMover(atom, sizes, primary)) return element;
-    const compared = primary ? this.compareColour(atom, palette) : null;
+    const compared = this.compareColour(atom, palette);
     if (compared) return compared;
     return [element[0] * 0.72 + palette.neutral[0] * 0.28, element[1] * 0.72 + palette.neutral[1] * 0.28, element[2] * 0.72 + palette.neutral[2] * 0.28];
   }
@@ -116,13 +122,14 @@ SM.Viewer = class Viewer {
   }
 
   isMover(atom, sizes, primary) {
-    return this.settings.colour === "highlight" && primary && sizes[atom] > this.settings.threshold && !this.store.fixed[atom];
+    /* Every supercell image is highlighted, not only the home cell. */
+    return this.settings.colour === "highlight" && sizes[atom] > this.settings.threshold && !this.store.fixed[atom];
   }
 
-  /* Atoms that never fade: movers above the threshold, pinned atoms and the selected atom (primary image only). */
-  emphasised(atom, sizes, primary) {
+  /* Atoms that never fade, in every supercell image: movers above the threshold, compared movers, pinned atoms and the
+     selected atom. */
+  emphasised(atom, sizes) {
     const s = this.settings;
-    if (!primary) return false;
     return (sizes[atom] > s.threshold && !this.store.fixed[atom]) || s.pinned.has(atom) || s.selected === atom
       || (s.compare.size > 0 && s.colour === "highlight" && this.compareColour(atom, this.lastPalette) !== null);
   }
@@ -225,6 +232,12 @@ SM.Viewer = class Viewer {
        reactions moving the same atoms (e.g. mirror-image saddles) show both paths. */
     if (!s.focus && s.compare.size) {
       const wrap = this.wrapShifts(centre);
+      const span = this.repeatAxes().map((p) => (p ? s.supercell : 1));
+      const half = span.map((n) => Math.floor((n - 1) / 2));
+      const images = [];
+      for (let u = -half[0]; u < span[0] - half[0]; u += 1)
+        for (let v = -half[1]; v < span[1] - half[1]; v += 1)
+          for (let w = -half[2]; w < span[2] - half[2]; w += 1) images.push(lattice.cartesian(u, v, w));
       this.ghostBuffer = this.ghostBuffer || new Float32Array(store.n * 3);
       for (const [reaction, slot] of s.compare) {
         if (reaction === this.reaction) continue;
@@ -232,12 +245,14 @@ SM.Viewer = class Viewer {
         const colour = palette.compare[slot % palette.compare.length];
         for (const atom of store.movers(reaction, s.threshold)) {
           const i = atom * 3;
-          if ((cursor + 1) * SM.STRIDE > this.buffer.length) {
-            const bigger = new Float32Array(this.buffer.length * 2); bigger.set(this.buffer); this.buffer = bigger;
+          for (const shift of images) {
+            if ((cursor + 1) * SM.STRIDE > this.buffer.length) {
+              const bigger = new Float32Array(this.buffer.length * 2); bigger.set(this.buffer); this.buffer = bigger;
+            }
+            this.buffer.set([ghost[i] + wrap[i] + shift[0], ghost[i + 1] + wrap[i + 1] + shift[1], ghost[i + 2] + wrap[i + 2] + shift[2],
+              SM.geo.RADII[store.numbers[atom]] * 0.92 * s.atomScale * 0.98, colour[0], colour[1], colour[2], 0, 0.55], cursor * SM.STRIDE);
+            cursor += 1;
           }
-          this.buffer.set([ghost[i] + wrap[i], ghost[i + 1] + wrap[i + 1], ghost[i + 2] + wrap[i + 2],
-            SM.geo.RADII[store.numbers[atom]] * 0.92 * s.atomScale * 0.98, colour[0], colour[1], colour[2], 0, 0.55], cursor * SM.STRIDE);
-          cursor += 1;
         }
       }
     }

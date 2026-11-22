@@ -17,6 +17,36 @@ SM.Inspector = class Inspector {
     this.settings.redraw();
   }
 
+  /* For each compared reaction: how its saddle, reactant and product differ from this reaction's, atom by atom. */
+  comparePanel() {
+    const { h, fmt } = SM;
+    const others = [...this.settings.compare].filter(([id]) => id !== this.reaction);
+    if (!others.length) return null;
+    const r = this.store.reactions[this.reaction];
+    const atomName = (i) => `${SM.geo.SYMBOLS[this.store.numbers[i]]} ${i}`;
+    return h("section", { class: "inspect-block" },
+      h("h3", {}, "Compared with"),
+      others.map(([id, slot]) => {
+        const o = this.store.reactions[id];
+        const saddle = SM.frameDiff(this.store, this.reaction, 1, id, 1);
+        const reactant = SM.frameDiff(this.store, this.reaction, 0, id, 0);
+        const product = SM.frameDiff(this.store, this.reaction, 2, id, 2);
+        const same = (x) => (x.max <= 0.2 ? "same (≤ 0.2 Å)" : `differ by ${x.max.toFixed(2)} Å`);
+        return h("div", { class: "compare-item" },
+          h("p", {}, h("i", { class: "swatch", style: `background:var(${SM.FAN_COLOURS[slot % 8]})` }), " ",
+            h("b", {}, o.saddle.slice(4, 10)), ` · ${fmt.ev(o.barrier)} eV → ${this.store.label(o.product)}`),
+          h("dl", { class: "facts" },
+            this.row("Saddles", `${saddle.max.toFixed(3)} Å max`),
+            this.row("Reactants", same(reactant)),
+            this.row("Products", o.product === r.product ? "same minimum" : same(product)),
+            this.row("Saddle energy", `${fmt.signed(o.eS - r.eS)} eV`)),
+          h("p", { class: "muted" }, "Atoms differing most between the saddles (drift removed, as in SaddleBench):"),
+          h("div", { class: "neighbours" }, saddle.top.map(([atom, dist]) => h("button", { type: "button", title: "Select and pin this atom", onclick: () => this.actions.togglePin(atom) },
+            h("b", {}, atomName(atom)), ` ${dist.toFixed(2)} Å`))));
+      }),
+      h("p", { class: "note" }, "Colour → \"Difference vs compared saddle\" shades every atom by this difference. Above 0.2 Å the benchmark treats the saddles as different."));
+  }
+
   row(label, value) {
     return [SM.h("dt", {}, label), SM.h("dd", {}, value)];
   }
@@ -113,6 +143,7 @@ SM.Inspector = class Inspector {
     const classCurvature = cls ? SM.classCurvature(this.store, cls) : null;
     SM.fill(this.root,
       bench,
+      this.comparePanel(),
       h("section", { class: "inspect-block" },
         h("h3", {}, "Reaction"),
         h("dl", { class: "facts" },

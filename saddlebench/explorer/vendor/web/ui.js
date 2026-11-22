@@ -294,3 +294,34 @@ SM.literature = (lit) => {
       lit.mechanism ? h("span", { class: "lit-mech" }, ` · ${lit.mechanism}`) : null),
     h("div", { class: "lit-body" }, body));
 };
+
+/* Per-atom difference between frame fa of reaction a and frame fb of reaction b, the way SaddleBench measures
+   identity (canonical core-drift maxdev): minimum-image displacement, subtract the mean displacement of the atoms
+   at or below the median, minimum image again. Returns { per: Float32Array, max, top: [[atom, distance], ...] }. */
+SM.frameDiff = (store, a, fa, b, fb) => {
+  const key = `${a}:${fa}|${b}:${fb}`;
+  store._diffs = store._diffs || new Map();
+  if (store._diffs.has(key)) return store._diffs.get(key);
+  const L = store.lattice || (store.lattice = new SM.geo.Lattice(store.cell, store.pbc));
+  const A = store.frame(a, fa); const B = store.frame(b, fb);
+  const n = store.n;
+  const d = new Float64Array(n * 3); const mag = new Float64Array(n);
+  for (let i = 0; i < n; i += 1) {
+    const v = L.mic(B[i * 3] - A[i * 3], B[i * 3 + 1] - A[i * 3 + 1], B[i * 3 + 2] - A[i * 3 + 2]);
+    d.set(v, i * 3); mag[i] = Math.hypot(v[0], v[1], v[2]);
+  }
+  const median = [...mag].sort((x, y) => x - y)[(n - 1) >> 1];
+  const mean = [0, 0, 0]; let count = 0;
+  for (let i = 0; i < n; i += 1) if (mag[i] <= median) { mean[0] += d[i * 3]; mean[1] += d[i * 3 + 1]; mean[2] += d[i * 3 + 2]; count += 1; }
+  mean.forEach((v, k) => { mean[k] = v / Math.max(count, 1); });
+  const per = new Float32Array(n); let max = 0;
+  for (let i = 0; i < n; i += 1) {
+    const v = L.mic(d[i * 3] - mean[0], d[i * 3 + 1] - mean[1], d[i * 3 + 2] - mean[2]);
+    per[i] = Math.hypot(v[0], v[1], v[2]); if (per[i] > max) max = per[i];
+  }
+  const top = [...per.keys()].sort((x, y) => per[y] - per[x]).slice(0, 6).map((i) => [i, per[i]]);
+  const out = { per, max, top };
+  if (store._diffs.size > 200) store._diffs.delete(store._diffs.keys().next().value);
+  store._diffs.set(key, out);
+  return out;
+};

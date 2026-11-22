@@ -94,7 +94,7 @@ SM.Workspace = class Workspace {
               tool("Highlight",
                 h("input", { type: "range", min: 0.05, max: 2, step: 0.05, value: s.threshold, "aria-label": "Highlight atoms moving more than this distance", oninput: (e) => { s.threshold = Number(e.target.value); thresholdValue.textContent = `${s.threshold.toFixed(2)} Å`; this.updateMovers(); s.redraw(); } }), thresholdValue, this.moverCount,
                 h("label", { class: "field-inline" }, "Colour", h("select", { onchange: (e) => { s.colour = e.target.value; s.redraw(); } },
-                  h("option", { value: "highlight" }, "Element, ring movers"), SM.debug ? h("option", { value: "group" }, "Motion groups") : null, h("option", { value: "element" }, "Element"), h("option", { value: "displacement" }, "Displacement"), h("option", { value: "height" }, "Height"), h("option", { value: "fixed" }, "Fixed or free")))),
+                  h("option", { value: "highlight" }, "Element, ring movers"), SM.debug ? h("option", { value: "group" }, "Motion groups") : null, h("option", { value: "element" }, "Element"), h("option", { value: "diff" }, "Difference vs compared saddle"), h("option", { value: "displacement" }, "Displacement"), h("option", { value: "height" }, "Height"), h("option", { value: "fixed" }, "Fixed or free")))),
               tool("Vectors", vectorBoxes,
                 h("label", { class: "field-inline" }, "Scale", h("input", { type: "range", min: 0.25, max: 4, step: 0.25, value: 1, oninput: (e) => { s.vectorScale = Number(e.target.value); scaleValue.textContent = `${s.vectorScale.toFixed(1)}×`; s.redraw(); } }), scaleValue)),
               tool("Camera", ["top", "side", "bottom", "iso"].map((name) => h("button", { type: "button", onclick: () => s.camera(name) }, name[0].toUpperCase() + name.slice(1))),
@@ -154,7 +154,7 @@ SM.Workspace = class Workspace {
           [["all", "All reactions"], ["reference", "Reference only"], ["missed", "Missed only"]].map(([v, t]) => h("option", { value: v, selected: v === this.refFilter }, t)))) : null),
       rows.length ? null : h("p", { class: "muted" }, "No reactions match these filters."),
       this.settings.compare.size ? h("div", { class: "compare-bar" }, h("span", {}, `Comparing ${this.settings.compare.size}: their movers are coloured in the viewer`),
-        h("button", { type: "button", onclick: () => { this.settings.compare.clear(); this.renderSide(); this.settings.redraw(); } }, "Clear")) : null,
+        h("button", { type: "button", onclick: () => { this.settings.compare.clear(); this.renderSide(); this.inspector.render(); this.settings.redraw(); } }, "Clear")) : null,
       h("div", { class: "rows" }, rows.map((r) => h("div", { class: "row-wrap" }, this.compareToggle(r), h("button", { type: "button", class: `row${r.id === this.reaction ? " on" : ""}`, "data-reaction": r.id, onclick: () => this.select(r.id) },
         h("span", { class: "row-main" }, h("b", {}, `${fmt.ev(r.barrier)} eV`), this.store.score ? this.store.score.pill(r.id) : null, h("span", {}, `→ ${this.store.label(r.product)}`)),
         h("span", { class: "row-sub" }, `${r.saddle.slice(4, 10)} · ${fmt.count(r.motion.moved, "atom")} · ${fmt.signed(r.reactionEnergy)} eV${r.curvature === null || r.curvature === undefined ? "" : ` · κ ${r.curvature.toFixed(2)}`}`),
@@ -175,7 +175,7 @@ SM.Workspace = class Workspace {
       onclick: () => {
         if (map.has(r.id)) map.delete(r.id);
         else { const used = new Set(map.values()); let k = 0; while (used.has(k)) k += 1; map.set(r.id, k); }
-        this.renderSide(); this.settings.redraw();
+        this.renderSide(); this.inspector.render(); this.settings.redraw();
       } }, slot !== undefined ? "" : "+");
   }
 
