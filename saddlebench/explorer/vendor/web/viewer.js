@@ -21,7 +21,7 @@ SM.ViewSettings = class ViewSettings {
       pinned: new Set(), labels: true, selected: null,
       /* atomScale multiplies drawn radii; keepView keeps the camera pivot and image wrapping when the reaction
          changes; compare maps reaction id -> colour slot, and those reactions' movers are drawn in that colour. */
-      atomScale: 1, keepView: false, compare: new Map(),
+      atomScale: 1, keepView: false, compare: new Map(), roll: 0, bonds: false,
     }, overrides);
     this.viewers = new Set();
   }
@@ -29,7 +29,7 @@ SM.ViewSettings = class ViewSettings {
   redraw() { this.viewers.forEach((viewer) => viewer.draw()); }
 
   resetCamera() {
-    Object.assign(this, { yaw: 0.5, pitch: -1.0, zoom: 1, panX: 0, panY: 0 });
+    Object.assign(this, { yaw: 0.5, pitch: -1.0, roll: 0, zoom: 1, panX: 0, panY: 0 });
     this.viewers.forEach((viewer) => { viewer.centre = null; });
     this.redraw();
   }
@@ -37,8 +37,18 @@ SM.ViewSettings = class ViewSettings {
   camera(name) {
     const presets = { top: [0, 0], side: [0, -Math.PI / 2], bottom: [0, Math.PI], iso: [0.5, -1.0] };
     [this.yaw, this.pitch] = presets[name];
+    this.roll = 0;
     this.redraw();
   }
+};
+
+/* View rotation rows: yaw/pitch (trackball), then roll spins the picture in the screen plane. */
+SM.viewRotation = (s) => {
+  const R = SM.geo.rotation(s.yaw, s.pitch);
+  if (!s.roll) return R;
+  const c = Math.cos(s.roll); const n = Math.sin(s.roll);
+  return [[c * R[0][0] - n * R[1][0], c * R[0][1] - n * R[1][1], c * R[0][2] - n * R[1][2]],
+    [n * R[0][0] + c * R[1][0], n * R[0][1] + c * R[1][1], n * R[0][2] + c * R[1][2]], R[2]];
 };
 
 SM.Viewer = class Viewer {
@@ -95,9 +105,9 @@ SM.Viewer = class Viewer {
     }
     if (s.colour === "element") return element;
     if (s.colour === "diff") {
-      const other = [...s.compare.keys()].find((id) => id !== this.reaction);
+      const other = [...s.compare.keys()].find((id) => this.store.reactions[id].saddle !== this.store.reactions[this.reaction].saddle);
       if (other === undefined) return element;
-      const diff = SM.frameDiff(this.store, this.reaction, 1, other, 1);
+      const diff = SM.frameDiff(this.store, this.reaction, 1, SM.matchRow(this.store, this.reaction, other), 1);
       return SM.geo.ramp(Math.min(1, diff.per[atom] / Math.max(diff.max, 0.2)));
     }
     if (s.colour === "displacement") return SM.geo.ramp(sizes[atom] / Math.max(zRange.maxSize, 0.5));
@@ -108,6 +118,35 @@ SM.Viewer = class Viewer {
     const compared = this.compareColour(atom, palette);
     if (compared) return compared;
     return [element[0] * 0.72 + palette.neutral[0] * 0.28, element[1] * 0.72 + palette.neutral[1] * 0.28, element[2] * 0.72 + palette.neutral[2] * 0.28];
+  }
+
+  /* Bonds between drawn atoms (all images): distance under 1.15 × the sum of covalent radii, found with a grid.
+     Returns a flat array [x1,y1,z1,x2,y2,z2,...]. */
+  bonds() {
+    const R = SM.geo.RADII; const nums = this.store.numbers; const drawn = this.drawn;
+    let maxR = 0;
+    drawn.forEach((d) => { maxR = Math.max(maxR, R[nums[d.atom]] || 1); });
+    const cell = 2.3 * maxR; const grid = new Map();
+    const key = (x, y, z) => `${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`;
+    drawn.forEach((d, i) => { const k = key(d.x, d.y, d.z); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(i); });
+    const out = [];
+    drawn.forEach((a, i) => {
+      const gx = Math.floor(a.x / cell); const gy = Math.floor(a.y / cell); const gz = Math.floor(a.z / cell);
+      const ra = R[nums[a.atom]] || 1;
+      for (let u = -1; u <= 1; u += 1) for (let v = -1; v <= 1; v += 1) for (let w = -1; w <= 1; w += 1) {
+        const list = grid.get(`${gx + u},${gy + v},${gz + w}`);
+        if (!list) continue;
+        for (const j of list) {
+          if (j <= i) continue;
+          const b = drawn[j];
+          const limit = 1.15 * (ra + (R[nums[b.atom]] || 1));
+          const dx = b.x - a.x; const dy = b.y - a.y; const dz = b.z - a.z;
+          const d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 < limit * limit && d2 > 0.16) out.push(a.x, a.y, a.z, b.x, b.y, b.z);
+        }
+      }
+    });
+    return out;
   }
 
   /* Colour of the first compared reaction (other than the shown one) in which this atom moves, else null. */
@@ -241,9 +280,10 @@ SM.Viewer = class Viewer {
       this.ghostBuffer = this.ghostBuffer || new Float32Array(store.n * 3);
       for (const [reaction, slot] of s.compare) {
         if (reaction === this.reaction) continue;
-        const ghost = store.path(reaction, s.t, this.ghostBuffer);
+        const row = SM.matchRow ? SM.matchRow(store, this.reaction, reaction) : reaction;
+        const ghost = store.path(row, s.t, this.ghostBuffer);
         const colour = palette.compare[slot % palette.compare.length];
-        for (const atom of store.movers(reaction, s.threshold)) {
+        for (const atom of store.movers(row, s.threshold)) {
           const i = atom * 3;
           for (const shift of images) {
             if ((cursor + 1) * SM.STRIDE > this.buffer.length) {
@@ -287,16 +327,19 @@ SM.Viewer = class Viewer {
     const s = this.settings;
     const palette = this.palette();
     const { count, centre } = this.buildScene(palette);
-    const R = SM.geo.rotation(s.yaw, s.pitch);
+    const R = SM.viewRotation(s);
     const scale = (Math.min(width, height) / (2 * this.viewSpan())) * s.zoom;
     const pivot = centre;
-    this.renderer.draw(ctx, width, height, ratio, { data: this.buffer, count, rotation: R, pivot, scale, panX: s.panX, panY: s.panY, fog: palette.fog, ring: palette.accent });
+    const bonds = s.bonds ? this.bonds() : null;
+    this.renderer.draw(ctx, width, height, ratio, { data: this.buffer, count, rotation: R, pivot, scale, panX: s.panX, panY: s.panY, fog: palette.fog, ring: palette.accent,
+      bonds, bondColour: getComputedStyle(this.canvas).getPropertyValue("--muted").trim() });
     this.view = { R, pivot, scale, width, height };
     if (!s.focus) this.drawCell(ctx);
     if (this.options.overlays !== false) {
       this.drawVectors(ctx);
       if (this.options.overlay) this.options.overlay(ctx, this);
       this.drawPins(ctx);
+      this.drawLegend(ctx);
     }
   }
 
@@ -375,6 +418,28 @@ SM.Viewer = class Viewer {
     });
   }
 
+  /* While comparing: which atoms are the selected reaction and which are ghosts. */
+  drawLegend(ctx) {
+    const s = this.settings;
+    const others = [...s.compare].filter(([id]) => id !== this.reaction);
+    if (s.focus || !others.length) return;
+    const style = getComputedStyle(this.canvas);
+    const r = this.store.reactions[this.reaction];
+    const lines = [[style.getPropertyValue("--ink").trim(), `Solid: selected ${r.saddle.slice(4, 10)} (${this.store.label(r.reactant)} → ${this.store.label(r.product)})`]];
+    others.forEach(([id, slot]) => {
+      const m = this.store.reactions[SM.matchRow(this.store, this.reaction, id)];
+      lines.push([style.getPropertyValue(SM.FAN_COLOURS[slot % 8]).trim(), `Ghost: ${m.saddle.slice(4, 10)} (${this.store.label(m.reactant)} → ${this.store.label(m.product)})`]);
+    });
+    ctx.font = "600 12px system-ui, sans-serif";
+    const w = Math.max(...lines.map(([, t]) => ctx.measureText(t).width)) + 28;
+    ctx.fillStyle = style.getPropertyValue("--panel").trim();
+    ctx.globalAlpha = 0.86; ctx.fillRect(8, 8, w, lines.length * 18 + 8); ctx.globalAlpha = 1;
+    lines.forEach(([colour, text], i) => {
+      ctx.fillStyle = colour; ctx.beginPath(); ctx.arc(18, 21 + i * 18, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = style.getPropertyValue("--ink").trim(); ctx.fillText(text, 28, 25 + i * 18);
+    });
+  }
+
   drawPins(ctx) {
     const s = this.settings;
     if (!s.pinned.size && s.selected == null) return;
@@ -415,16 +480,25 @@ SM.Viewer = class Viewer {
 
   bind() {
     const c = this.canvas; const s = this.settings;
-    let last = null; let moved = 0; let panning = false;
+    let last = null; let moved = 0; let panning = false; let rolling = false;
     c.addEventListener("pointerdown", (e) => {
       last = [e.clientX, e.clientY]; moved = 0; panning = e.shiftKey || e.button === 2;
+      rolling = e.altKey || e.ctrlKey || e.metaKey;
       c.setPointerCapture(e.pointerId);
     });
     c.addEventListener("pointermove", (e) => {
       if (!last) return;
       const dx = e.clientX - last[0]; const dy = e.clientY - last[1];
       moved += Math.abs(dx) + Math.abs(dy);
-      if (panning) { s.panX += dx; s.panY -= dy; } else {
+      if (rolling) {
+        /* Spin about the screen normal: angle swept around the canvas centre. */
+        const box = c.getBoundingClientRect();
+        const cx = box.left + box.width / 2; const cy = box.top + box.height / 2;
+        const before = Math.atan2(last[1] - cy, last[0] - cx); const after = Math.atan2(e.clientY - cy, e.clientX - cx);
+        let delta = after - before;
+        if (delta > Math.PI) delta -= 2 * Math.PI; if (delta < -Math.PI) delta += 2 * Math.PI;
+        s.roll -= delta;
+      } else if (panning) { s.panX += dx; s.panY -= dy; } else {
         s.yaw += dx * 0.008;
         s.pitch = SM.wrapAngle(s.pitch + dy * 0.008);
       }
@@ -443,6 +517,7 @@ SM.Viewer = class Viewer {
       s.redraw();
     }, { passive: false });
     c.addEventListener("keydown", (e) => {
+      if (e.key === "q" || e.key === "e") { s.roll += e.key === "q" ? 0.1 : -0.1; s.redraw(); return; }
       const turn = { a: [-0.1, 0], d: [0.1, 0], w: [0, -0.1], s: [0, 0.1] }[e.key];
       if (!turn) return;
       s.yaw += turn[0];

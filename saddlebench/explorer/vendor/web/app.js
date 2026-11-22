@@ -77,13 +77,22 @@ window.SM = window.SM || {};
         galleryRoot.hidden = true;
         gallery.pause();
         workspaceRoot.hidden = false;
+        if (q.get("bonds") === "1") { workspace.settings.bonds = true; if (workspace.bondBox) workspace.bondBox.checked = true; }
+        if (q.get("size") && Number(q.get("size")) > 0) workspace.setAtomScale(Number(q.get("size")));
         workspace.open(cls, Number(q.get("r")));
+        if (q.has("cmp")) {
+          /* Consume cmp=ids once (from a flag or a shared link), so returning to this class does not reapply it. */
+          workspace.setCompare(q.get("cmp").split(",").filter(Boolean).map(Number)
+            .filter((id) => Number.isInteger(id) && id >= 0 && id < store.reactions.length));
+          q.delete("cmp"); writeHash(q);
+        }
         workspace.show();
         window.scrollTo(0, 0);
       } else {
         if (workspace) workspace.hide();
         workspaceRoot.hidden = true;
         galleryRoot.hidden = false;
+        gallery.setView(q.get("view") === "flags");
         gallery.resume();
       }
     };

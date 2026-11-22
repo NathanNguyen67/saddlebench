@@ -75,7 +75,7 @@ SM.Renderer = class Renderer {
   draw(ctx, width, height, ratio, scene) {
     ctx.clearRect(0, 0, width, height);
     if (!scene.count) return;
-    if (!this.gl) { this.drawFlat(ctx, width, height, scene); return; }
+    if (!this.gl) { if (scene.bonds && scene.bonds.length) SM.drawBonds(ctx, width, height, scene); this.drawFlat(ctx, width, height, scene); return; }
     const gl = this.gl;
     const w = Math.max(1, Math.round(width * ratio));
     const h = Math.max(1, Math.round(height * ratio));
@@ -125,6 +125,7 @@ SM.Renderer = class Renderer {
       gl.disable(gl.BLEND);
     }
     gl.finish();
+    if (scene.bonds && scene.bonds.length) SM.drawBonds(ctx, width, height, scene);
     ctx.drawImage(this.canvas, 0, 0, w, h, 0, 0, width, height);
   }
 
@@ -170,4 +171,22 @@ SM.splitByAlpha = function splitByAlpha(data, count, R, pivot) {
   const out = new Float32Array(faded * W);
   order.forEach(([, i], k) => out.set(data.subarray(i * W, i * W + W), k * W));
   return { opaque, opaqueCount: o, faded: out, fadedCount: faded };
+};
+
+/* Bonds as lines under the atoms (drawn before the atom image, so atoms cover their ends). */
+SM.drawBonds = (ctx, width, height, scene) => {
+  const R = scene.rotation; const p = scene.pivot; const b = scene.bonds;
+  const px = (i) => {
+    const dx = b[i] - p[0]; const dy = b[i + 1] - p[1]; const dz = b[i + 2] - p[2];
+    return [width / 2 + (R[0][0] * dx + R[0][1] * dy + R[0][2] * dz) * scene.scale + scene.panX,
+      height / 2 - (R[1][0] * dx + R[1][1] * dy + R[1][2] * dz) * scene.scale - scene.panY];
+  };
+  ctx.save();
+  ctx.strokeStyle = scene.bondColour || "#888";
+  ctx.lineWidth = Math.max(1.2, Math.min(7, 0.16 * scene.scale));
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  for (let i = 0; i < b.length; i += 6) { const a = px(i); const c = px(i + 3); ctx.moveTo(a[0], a[1]); ctx.lineTo(c[0], c[1]); }
+  ctx.stroke();
+  ctx.restore();
 };

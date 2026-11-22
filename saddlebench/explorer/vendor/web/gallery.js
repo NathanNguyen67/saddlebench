@@ -39,6 +39,10 @@ SM.Gallery = class Gallery {
     this.barrierMax = maxBarrier;
     const barrierValue = h("output", {}, `${maxBarrier.toFixed(2)} eV`);
     this.grid = h("div", { class: "card-grid" });
+    this.flagsButton = h("button", { type: "button", class: "chip tag-endpoint", "aria-pressed": "false", title: "Suspicious records found by simple rules",
+      onclick: () => this.navigate({ view: this.flagsOn ? null : "flags" }) }, "Data flags");
+    this.flagsRoot = h("section", { class: "flags", hidden: true });
+    this.classView = h("div", {});
     this.root.append(
       h("div", { class: "filters" },
         h("input", { type: "search", class: "search", placeholder: "Search class or tag", "aria-label": "Search classes", oninput: (e) => { this.query = e.target.value.trim().toLowerCase(); this.apply(); } }),
@@ -53,11 +57,55 @@ SM.Gallery = class Gallery {
         h("label", { class: "field" }, "Lowest barrier up to",
           h("input", { type: "range", min: 0, max: maxBarrier, step: 0.01, value: maxBarrier, oninput: (e) => { this.barrierMax = Number(e.target.value); barrierValue.textContent = `${this.barrierMax.toFixed(2)} eV`; this.apply(); } }),
           barrierValue)),
-      h("div", { class: "chips", role: "group", "aria-label": "Filter by tag" }, this.chips),
-      this.summary,
-      this.grid,
+      h("div", { class: "chips", role: "group", "aria-label": "Filter by tag" }, this.flagsButton, this.chips),
+      this.classView,
+      this.flagsRoot,
     );
+    this.classView.append(this.summary, this.grid);
     this.apply();
+  }
+
+  /* Hash navigation helper: keys set to null are removed. */
+  navigate(params) {
+    const q = new URLSearchParams(location.hash.slice(1));
+    Object.entries(params).forEach(([k, v]) => (v === null || v === undefined ? q.delete(k) : q.set(k, String(v))));
+    location.hash = q.toString();
+  }
+
+  /* Class cards or the data-flags list (hash view=flags). */
+  setView(flags) {
+    this.flagsOn = flags;
+    this.flagsButton.setAttribute("aria-pressed", String(flags));
+    this.classView.hidden = flags;
+    this.flagsRoot.hidden = !flags;
+    if (flags) {
+      this.renderFlags();
+      const n = Object.values(SM.computeFlags(this.store)).reduce((t, list) => t + list.length, 0);
+      this.flagsButton.replaceChildren("Data flags", SM.h("span", { class: "chip-count" }, String(n)));
+    }
+  }
+
+  renderFlags() {
+    const { h } = SM;
+    const flags = SM.computeFlags(this.store);
+    const total = Object.values(flags).reduce((t, list) => t + list.length, 0);
+    const open = (ids, compare) => {
+      const r = this.store.reactions[ids[0]];
+      this.navigate({ c: r.classes[0], r: r.id, cmp: compare && ids.length > 1 ? ids.slice(1).join(",") : null });
+    };
+    SM.fill(this.flagsRoot,
+      h("p", { class: "muted" }, `${total} flagged items. Rules are display heuristics to find records worth inspecting, not verdicts. Open shows the reaction; Compare opens it with the others ghosted and compared (saddle difference, shared and unshared minima).`),
+      Object.entries(SM.FLAG_RULES).map(([key, rule]) => {
+        const list = flags[key];
+        return h("details", { class: "flag-group", open: list.length && list.length <= 12 ? true : null },
+          h("summary", {}, rule.title, h("span", { class: "chip-count" }, String(list.length))),
+          h("p", { class: "flag-why" }, rule.why),
+          list.slice(0, 300).map((item) => h("div", { class: "flag-row" },
+            h("span", { class: "flag-text" }, item.text, h("span", { class: "muted" }, ` · ${this.store.reactions[item.reactions[0]].classes[0]}`)),
+            h("button", { type: "button", onclick: () => open(item.reactions, false) }, "Open"),
+            item.reactions.length > 1 ? h("button", { type: "button", onclick: () => open(item.reactions, true) }, "Compare") : null)),
+          list.length > 300 ? h("p", { class: "muted" }, `First 300 of ${list.length} shown.`) : null);
+      }));
   }
 
   setMissed(on) {

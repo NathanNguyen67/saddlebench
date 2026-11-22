@@ -17,34 +17,58 @@ SM.Inspector = class Inspector {
     this.settings.redraw();
   }
 
-  /* For each compared reaction: how its saddle, reactant and product differ from this reaction's, atom by atom. */
+  /* Saddle-level comparison. A saddle can have several endpoint pairs (rows); the compared saddle's row with the same
+     endpoint pair as the selected one is used (else same product, else same reactant), and both saddles' full sets of
+     minima are listed, so different rows of multi-endpoint saddles are not mistaken for different reactions. */
   comparePanel() {
     const { h, fmt } = SM;
-    const others = [...this.settings.compare].filter(([id]) => id !== this.reaction);
-    if (!others.length) return null;
     const r = this.store.reactions[this.reaction];
+    const all = [...this.settings.compare].filter(([id]) => id !== this.reaction);
+    const others = all.filter(([id]) => this.store.reactions[id].saddle !== r.saddle);
+    const siblings = all.filter(([id]) => this.store.reactions[id].saddle === r.saddle);
+    if (!all.length) return null;
     const atomName = (i) => `${SM.geo.SYMBOLS[this.store.numbers[i]]} ${i}`;
+    const names = (ids) => (ids.length ? ids.map((x) => this.store.label(x)).join(", ") : "none");
     return h("section", { class: "inspect-block" },
       h("h3", {}, "Compared with"),
       others.map(([id, slot]) => {
-        const o = this.store.reactions[id];
-        const saddle = SM.frameDiff(this.store, this.reaction, 1, id, 1);
-        const reactant = SM.frameDiff(this.store, this.reaction, 0, id, 0);
-        const product = SM.frameDiff(this.store, this.reaction, 2, id, 2);
-        const same = (x) => (x.max <= 0.2 ? "same (≤ 0.2 Å)" : `differ by ${x.max.toFixed(2)} Å`);
+        const m = SM.matchRow(this.store, this.reaction, id);
+        const o = this.store.reactions[m];
+        const samePair = [o.reactant, o.product].sort().join() === [r.reactant, r.product].sort().join();
+        const saddle = SM.frameDiff(this.store, this.reaction, 1, m, 1);
+        const sets = SM.endpointSets(this.store, r.saddle, o.saddle);
         return h("div", { class: "compare-item" },
-          h("p", {}, h("i", { class: "swatch", style: `background:var(${SM.FAN_COLOURS[slot % 8]})` }), " ",
-            h("b", {}, o.saddle.slice(4, 10)), ` · ${fmt.ev(o.barrier)} eV → ${this.store.label(o.product)}`),
+          h("p", {}, h("i", { class: "swatch", style: `background:var(${SM.FAN_COLOURS[slot % 8]})` }), " Saddle ",
+            h("b", {}, o.saddle.slice(4, 10)), o.classes[0] !== r.classes[0] ? ` (${o.classes[0]})` : ""),
           h("dl", { class: "facts" },
-            this.row("Saddles", `${saddle.max.toFixed(3)} Å max`),
-            this.row("Reactants", same(reactant)),
-            this.row("Products", o.product === r.product ? "same minimum" : same(product)),
-            this.row("Saddle energy", `${fmt.signed(o.eS - r.eS)} eV`)),
+            this.row("Saddle difference", `${saddle.max.toFixed(3)} Å max${saddle.max <= 0.2 ? " (same by the 0.2 Å rule)" : ""}`),
+            this.row("Saddle energy", `${fmt.signed(o.eS - r.eS)} eV`),
+            this.row("Compared pair", samePair ? `same pair, ${this.store.label(o.reactant)} → ${this.store.label(o.product)}`
+              : `no shared pair; using ${this.store.label(o.reactant)} → ${this.store.label(o.product)}`),
+            this.row("Minima both reach", names(sets.shared)),
+            this.row("Only this saddle", names(sets.onlyA)),
+            this.row("Only the other", names(sets.onlyB))),
           h("p", { class: "muted" }, "Atoms differing most between the saddles (drift removed, as in SaddleBench):"),
-          h("div", { class: "neighbours" }, saddle.top.map(([atom, dist]) => h("button", { type: "button", title: "Select and pin this atom", onclick: () => this.actions.togglePin(atom) },
+          h("div", { class: "neighbours" }, saddle.top.map(([atom, dist]) => h("button", { type: "button", title: "Pin this atom", onclick: () => this.actions.togglePin(atom) },
             h("b", {}, atomName(atom)), ` ${dist.toFixed(2)} Å`))));
       }),
-      h("p", { class: "note" }, "Colour → \"Difference vs compared saddle\" shades every atom by this difference. Above 0.2 Å the benchmark treats the saddles as different."));
+      siblings.map(([id, slot]) => {
+        const o = this.store.reactions[id];
+        const prod = SM.frameDiff(this.store, this.reaction, 2, id, 2);
+        const reac = SM.frameDiff(this.store, this.reaction, 0, id, 0);
+        return h("div", { class: "compare-item" },
+          h("p", {}, h("i", { class: "swatch", style: `background:var(${SM.FAN_COLOURS[slot % 8]})` }), " Same saddle, other pair: ",
+            h("b", {}, `${this.store.label(o.reactant)} → ${this.store.label(o.product)}`)),
+          h("dl", { class: "facts" },
+            this.row("Reactants", reac.max <= 0.2 ? `same (${reac.max.toFixed(2)} Å)` : `differ by ${reac.max.toFixed(2)} Å`),
+            this.row("Products", prod.max <= 0.2 ? `same (${prod.max.toFixed(2)} Å)` : `differ by ${prod.max.toFixed(2)} Å`),
+            this.row("Product energy", `${fmt.signed(o.eP - r.eP)} eV`),
+            this.row("DoubleMins", `${r.nObs} here, ${o.nObs} there`)),
+          h("p", { class: "muted" }, "Atoms differing most between the two products:"),
+          h("div", { class: "neighbours" }, prod.top.map(([atom, dist]) => h("button", { type: "button", title: "Pin this atom", onclick: () => this.actions.togglePin(atom) },
+            h("b", {}, atomName(atom)), ` ${dist.toFixed(2)} Å`))));
+      }),
+      h("p", { class: "note" }, "Colour → \"Difference vs compared saddle\" shades every atom by the saddle difference. Above 0.2 Å the benchmark treats saddles as different."));
   }
 
   row(label, value) {

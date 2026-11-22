@@ -193,3 +193,19 @@ button:focus-visible, select:focus-visible, input:focus-visible, canvas:focus-vi
   .position { grid-column: 1 / -1; padding-top: 0; }
   .card-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
 }
+
+.compare-bar { flex-wrap: wrap; }
+.compare-chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+.compare-chip { display: inline-flex; align-items: center; gap: 3px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 4px 1px 6px; }
+.compare-chip .linkish { background: none; border: 0; padding: 0; color: var(--ink); font-weight: 700; cursor: pointer; }
+.compare-chip .chip-x { background: none; border: 0; padding: 0 3px; color: var(--muted); cursor: pointer; }
+details.runs { margin-top: 8px; }
+details.runs summary { cursor: pointer; color: var(--muted); font-size: 12.5px; margin-bottom: 6px; }
+.flags { display: grid; gap: 10px; }
+.flag-group { border: 1px solid var(--line); border-radius: 9px; padding: 8px 12px; background: var(--panel); }
+.flag-group summary { cursor: pointer; font-weight: 700; }
+.flag-group summary .chip-count { margin-left: 6px; }
+.flag-why { color: var(--muted); font-size: 12.5px; margin: 6px 0; }
+.flag-row { display: flex; gap: 8px; align-items: center; padding: 4px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.flag-row .flag-text { flex: 1; }
+.flag-row button { font-size: 12px; }

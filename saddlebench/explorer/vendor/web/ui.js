@@ -325,3 +325,84 @@ SM.frameDiff = (store, a, fa, b, fb) => {
   store._diffs.set(key, out);
   return out;
 };
+
+/* Rows (reactions) of one saddle; a saddle has one row per endpoint pair. */
+SM.saddleRows = (store, saddle) => {
+  if (!store._bySaddle) {
+    store._bySaddle = new Map();
+    store.reactions.forEach((r) => { if (!store._bySaddle.has(r.saddle)) store._bySaddle.set(r.saddle, []); store._bySaddle.get(r.saddle).push(r); });
+  }
+  return store._bySaddle.get(saddle) || [];
+};
+
+/* The row of reaction `other`'s saddle that best matches reaction `selected`: the same endpoint pair, else the same
+   product, else the same reactant, else `other` itself. Compares like with like when saddles reach several minima. */
+SM.matchRow = (store, selected, other) => {
+  const a = store.reactions[selected]; const o = store.reactions[other];
+  if (!a || !o || a.saddle === o.saddle) return other;
+  const rows = SM.saddleRows(store, o.saddle);
+  const key = (r) => [r.reactant, r.product].sort().join("|");
+  return (rows.find((r) => key(r) === key(a)) || rows.find((r) => r.product === a.product)
+    || rows.find((r) => r.reactant === a.reactant) || o).id;
+};
+
+/* Minima reached by each of two saddles: shared, only in A, only in B. */
+SM.endpointSets = (store, saddleA, saddleB) => {
+  const reach = (s) => new Set(SM.saddleRows(store, s).flatMap((r) => [r.reactant, r.product]));
+  const A = reach(saddleA); const B = reach(saddleB);
+  return { shared: [...A].filter((x) => B.has(x)), onlyA: [...A].filter((x) => !B.has(x)), onlyB: [...B].filter((x) => !A.has(x)) };
+};
+
+/* Data-quality flags for one structure, computed in the page from the payload. Thresholds are display choices. */
+SM.FLAG_RULES = {
+  at_endpoint: { title: "Saddle at or below an endpoint", why: "Barrier or reverse barrier under 0.01 eV. A first-order saddle should lie above both minima it connects; this usually means an unconverged endpoint or a flat region." },
+  near_null: { title: "Near-null reaction", why: "Reactant and product differ by less than 0.30 Å (maxdev, drift removed). Just past the 0.2 Å identity cutoff; possibly the same minimum." },
+  below_seed: { title: "Lower minimum right next to the seed", why: "A seed reaction whose product is under 0.30 Å from the seed but more than 0.05 eV below it. The seed may not be the bottom of its basin." },
+  seed_energy: { title: "Seed energy mismatch", why: "DoubleMin endpoints matched to the seed differ from its stored energy by more than 0.02 eV (spread shown). Tight seed convergence or precision differences." },
+  multi_endpoint: { title: "Saddle reaching 3 or more minima", why: "DoubleMins from one saddle group scattered into several minima: a flat or poorly converged saddle, or loose DoubleMins. Such groups never reach the five-agree skip, so they collect many DoubleMins." },
+  twins: { title: "Twin saddles", why: "Different saddle groups with a shared endpoint pair, saddle energies within 2 meV and saddles within 0.4 Å: possibly one saddle converged to slightly different points." },
+};
+
+SM.computeFlags = (store) => {
+  if (store._flags) return store._flags;
+  const seeds = store.seeds;
+  const out = Object.fromEntries(Object.keys(SM.FLAG_RULES).map((k) => [k, []]));
+  store.reactions.forEach((r) => {
+    if (r.barrier < 0.01 || r.reverseBarrier < 0.01) out.at_endpoint.push({ reactions: [r.id], text: `barrier ${SM.fmt.ev(r.barrier)} / reverse ${SM.fmt.ev(r.reverseBarrier)} eV`, sort: Math.min(r.barrier, r.reverseBarrier) });
+    const d = SM.frameDiff(store, r.id, 0, r.id, 2).max;
+    if (d < 0.3) out.near_null.push({ reactions: [r.id], text: `reactant ↔ product ${d.toFixed(2)} Å, ΔE ${SM.fmt.signed(r.reactionEnergy)} eV`, sort: d });
+    if (seeds.has(r.reactant) && d < 0.3 && r.eP < -0.05) out.below_seed.push({ reactions: [r.id], text: `product ${store.label(r.product)} ${d.toFixed(2)} Å from the seed, ${SM.fmt.signed(r.eP)} eV`, sort: r.eP });
+  });
+  const atSeed = store.reactions.filter((r) => seeds.has(r.reactant));
+  const off = atSeed.filter((r) => Math.abs(r.eR) > 0.02);
+  if (off.length) {
+    const e = atSeed.map((r) => r.eR);
+    out.seed_energy.push({ reactions: off.sort((a, b) => Math.abs(b.eR) - Math.abs(a.eR)).slice(0, 12).map((r) => r.id),
+      text: `${off.length} of ${atSeed.length} seed endpoints off by > 0.02 eV; range ${SM.fmt.signed(Math.min(...e))} to ${SM.fmt.signed(Math.max(...e))} eV`, sort: -off.length });
+  }
+  const bySaddle = new Map();
+  store.reactions.forEach((r) => { if (!bySaddle.has(r.saddle)) bySaddle.set(r.saddle, []); bySaddle.get(r.saddle).push(r); });
+  bySaddle.forEach((rows) => {
+    const n = rows[0].saddleMinima;
+    if (n >= 3) out.multi_endpoint.push({ reactions: [...rows].sort((a, b) => b.nObs - a.nObs).slice(0, 8).map((r) => r.id),
+      text: `${n} minima, ${rows.length} endpoint pairs, ${rows.reduce((t, r) => t + r.nObs, 0)} DoubleMins`, sort: -n });
+  });
+  const byPair = new Map();
+  store.reactions.forEach((r) => { const k = [r.reactant, r.product].sort().join("|"); if (!byPair.has(k)) byPair.set(k, []); byPair.get(k).push(r); });
+  const seen = new Set();
+  byPair.forEach((rows) => {
+    for (let i = 0; i < rows.length; i += 1) for (let j = i + 1; j < rows.length; j += 1) {
+      const a = rows[i]; const b = rows[j];
+      if (a.saddle === b.saddle || Math.abs(a.eS - b.eS) >= 0.002) continue;
+      const key = [a.saddle, b.saddle].sort().join("|");
+      if (seen.has(key)) continue;
+      const d = SM.frameDiff(store, a.id, 1, b.id, 1).max;
+      if (d > 0.4) continue;
+      seen.add(key);
+      out.twins.push({ reactions: [a.id, b.id], text: `${a.saddle.slice(4, 10)} vs ${b.saddle.slice(4, 10)}: saddles ${d.toFixed(2)} Å apart, ΔE ${(1000 * (b.eS - a.eS)).toFixed(1)} meV, both ${store.label(a.reactant)} → ${store.label(a.product)}`, sort: d });
+    }
+  });
+  Object.values(out).forEach((list) => list.sort((x, y) => x.sort - y.sort));
+  store._flags = out;
+  return out;
+};

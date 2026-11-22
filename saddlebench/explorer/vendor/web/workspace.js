@@ -7,11 +7,7 @@ SM.Workspace = class Workspace {
   constructor(root, store, renderer, callbacks) {
     Object.assign(this, { root, store, renderer, callbacks });
     this.settings = new SM.ViewSettings({ radius: 11, focus: false, fade: 0, keepView: true });
-    /* #...&cmp=12,40 opens with those reactions compared (shareable links). */
-    try {
-      (new URLSearchParams(location.hash.slice(1)).get("cmp") || "").split(",").filter(Boolean).map(Number)
-        .filter((id) => Number.isInteger(id) && id >= 0 && id < store.reactions.length).forEach((id, k) => this.settings.compare.set(id, k));
-    } catch (error) { /* no hash */ }
+    /* #...&cmp=12,40 (shareable links, the flags page) is applied by the router via setCompare. */
     this.refFilter = "all";
     if (store.score) store.score.listeners.add(() => { if (this.cls) { this.renderSide(); this.inspector.render(); } });
     this.tab = "reactions";
@@ -53,6 +49,7 @@ SM.Workspace = class Workspace {
     const thresholdValue = value(`${s.threshold.toFixed(2)} Å`); const scaleValue = value("1.0×");
     const fadeValue = value(`${Math.round(s.fade * 100)}%`);
     const sizeValue = value("1.00×");
+    this.sizeValue = sizeValue;
     const bulk = this.viewer.repeatAxes()[2];
     this.supercell = h("select", { "aria-label": "Supercell", onchange: (e) => { s.supercell = Number(e.target.value); s.redraw(); } },
       [1, 2, 3].map((n) => h("option", { value: n }, bulk ? `${n}×${n}×${n}` : `${n}×${n}`)));
@@ -83,14 +80,16 @@ SM.Workspace = class Workspace {
             h("div", { class: "dock" }, this.play, h("div", { class: "slider-wrap" }, this.slider,
               h("div", { class: "ticks" }, h("span", {}, "Reactant"), h("span", {}, "Saddle"), h("span", {}, "Product"))), this.position),
             svg,
-            h("p", { class: "note" }, "Stored reactant, saddle and product frames joined by straight lines; the path between them is schematic. Click atoms to pin them."),
+            h("p", { class: "note" }, "Stored reactant, saddle and product frames joined by straight lines; the path between them is schematic. Drag rotates, Alt/Ctrl-drag or Q/E spins in the screen plane, Shift-drag pans, B toggles bonds, click atoms to pin them."),
             h("div", { class: "tools" },
               tool("View",
                 h("label", { class: "field-inline" }, "Supercell", this.supercell),
                 h("label", { class: "field-inline" }, "Fade others",
                   h("input", { type: "range", min: 0, max: 0.92, step: 0.02, value: s.fade, "aria-label": "Fade atoms that are not moving, pinned or selected", oninput: (e) => { s.fade = Number(e.target.value); fadeValue.textContent = `${Math.round(s.fade * 100)}%`; s.redraw(); } }), fadeValue),
                 h("label", { class: "field-inline" }, "Atom size",
-                  h("input", { type: "range", min: 0.2, max: 1.5, step: 0.05, value: s.atomScale, "aria-label": "Atom radius scale", oninput: (e) => { s.atomScale = Number(e.target.value); sizeValue.textContent = `${s.atomScale.toFixed(2)}×`; s.redraw(); } }), sizeValue)),
+                  this.sizeSlider = h("input", { type: "range", min: 0.2, max: 1.5, step: 0.05, value: s.atomScale, "aria-label": "Atom radius scale", oninput: (e) => { s.atomScale = Number(e.target.value); sizeValue.textContent = `${s.atomScale.toFixed(2)}×`; s.redraw(); } }), sizeValue),
+                h("label", { class: "check", title: "Bonds (B): covalent radii × 1.15. Shrink Atom size for ball-and-stick." },
+                  this.bondBox = h("input", { type: "checkbox", onchange: (e) => { s.bonds = e.target.checked; s.redraw(); } }), "Bonds")),
               tool("Highlight",
                 h("input", { type: "range", min: 0.05, max: 2, step: 0.05, value: s.threshold, "aria-label": "Highlight atoms moving more than this distance", oninput: (e) => { s.threshold = Number(e.target.value); thresholdValue.textContent = `${s.threshold.toFixed(2)} Å`; this.updateMovers(); s.redraw(); } }), thresholdValue, this.moverCount,
                 h("label", { class: "field-inline" }, "Colour", h("select", { onchange: (e) => { s.colour = e.target.value; s.redraw(); } },
@@ -153,8 +152,7 @@ SM.Workspace = class Workspace {
         this.store.score ? h("label", { class: "field-inline" }, "Reference", h("select", { onchange: (e) => { this.refFilter = e.target.value; this.renderSide(); } },
           [["all", "All reactions"], ["reference", "Reference only"], ["missed", "Missed only"]].map(([v, t]) => h("option", { value: v, selected: v === this.refFilter }, t)))) : null),
       rows.length ? null : h("p", { class: "muted" }, "No reactions match these filters."),
-      this.settings.compare.size ? h("div", { class: "compare-bar" }, h("span", {}, `Comparing ${this.settings.compare.size}: their movers are coloured in the viewer`),
-        h("button", { type: "button", onclick: () => { this.settings.compare.clear(); this.renderSide(); this.inspector.render(); this.settings.redraw(); } }, "Clear")) : null,
+      this.compareBar(),
       h("div", { class: "rows" }, rows.map((r) => h("div", { class: "row-wrap" }, this.compareToggle(r), h("button", { type: "button", class: `row${r.id === this.reaction ? " on" : ""}`, "data-reaction": r.id, onclick: () => this.select(r.id) },
         h("span", { class: "row-main" }, h("b", {}, `${fmt.ev(r.barrier)} eV`), this.store.score ? this.store.score.pill(r.id) : null, h("span", {}, `→ ${this.store.label(r.product)}`)),
         h("span", { class: "row-sub" }, `${r.saddle.slice(4, 10)} · ${fmt.count(r.motion.moved, "atom")} · ${fmt.signed(r.reactionEnergy)} eV${r.curvature === null || r.curvature === undefined ? "" : ` · κ ${r.curvature.toFixed(2)}`}`),
@@ -162,6 +160,44 @@ SM.Workspace = class Workspace {
         this.store.score?.nearNull(r.id) ? h("span", { class: "row-flag", title: "The product is barely distinct from the seed" }, "near-null") : null)))),
     );
     this.sidebar.querySelector(".row.on")?.scrollIntoView({ block: "nearest" });
+  }
+
+  /* Compared saddles as removable chips (kept across classes, so they stay visible here). */
+  compareBar() {
+    const { h } = SM;
+    const map = this.settings.compare;
+    if (!map.size) return null;
+    const changed = () => { this.renderSide(); this.inspector.render(); this.settings.redraw(); };
+    return h("div", { class: "compare-bar" },
+      h("span", { class: "muted" }, "Comparing (ghosts in the viewer):"),
+      h("div", { class: "compare-chips" }, [...map].map(([id, slot]) => {
+        const r = this.store.reactions[id];
+        return h("span", { class: "compare-chip" }, h("i", { class: "swatch", style: `background:var(${SM.FAN_COLOURS[slot % 8]})` }),
+          h("button", { type: "button", class: "linkish", title: "Open this reaction", onclick: () => this.goto(id) }, `${r.saddle.slice(4, 10)}${r.classes[0] !== this.cls.id ? ` (${r.classes[0]})` : ""}`),
+          h("button", { type: "button", class: "chip-x", "aria-label": "Stop comparing", onclick: () => { map.delete(id); changed(); } }, "×"));
+      })),
+      h("button", { type: "button", onclick: () => { map.clear(); changed(); } }, "Clear"));
+  }
+
+  setAtomScale(x) {
+    this.settings.atomScale = Math.max(0.2, Math.min(1.5, x));
+    if (this.sizeSlider) this.sizeSlider.value = this.settings.atomScale;
+    if (this.sizeValue) this.sizeValue.textContent = `${this.settings.atomScale.toFixed(2)}×`;
+    this.settings.redraw();
+  }
+
+  /* Open a reaction, switching class if needed. */
+  goto(id) {
+    const r = this.store.reactions[id];
+    if (r.classes[0] !== this.cls.id) this.open(r.classes[0], id); else this.select(id);
+  }
+
+  /* Replace the comparison set (from the URL or the flags page). */
+  setCompare(ids) {
+    this.settings.compare.clear();
+    ids.forEach((id, k) => this.settings.compare.set(id, k));
+    if (this.cls) { this.renderSide(); this.inspector.render(); }
+    this.settings.redraw();
   }
 
   /* Toggle a reaction into the comparison set; each gets the next free colour slot. */
@@ -191,7 +227,11 @@ SM.Workspace = class Workspace {
   }
 
   fanItems() {
-    if (this.scope === "saddle") return this.saddleReactions().map((r) => ({ r, n: r.nObs }));
+    if (this.scope === "saddle") {
+      const seeds = this.store.seeds;
+      return this.saddleReactions().map((r) => ({ r, n: r.nObs }))
+        .sort((a, b) => (seeds.has(b.r.reactant) || seeds.has(b.r.product)) - (seeds.has(a.r.reactant) || seeds.has(a.r.product)) || b.n - a.n);
+    }
     return this.classProducts();
   }
 
@@ -204,17 +244,18 @@ SM.Workspace = class Workspace {
     SM.fill(this.sidebar,
       h("div", { class: "segment" }, segment("saddle", "This saddle"), segment("class", "Whole class")),
       this.scope === "saddle" ? SM.endpointMap(this.store, this.saddleReactions(), this.reaction, (id) => this.select(id)) : null,
-      this.scope === "saddle" && items.length > 1 ? h("label", { class: "check" }, h("input", { type: "checkbox", checked: this.overlay, onchange: (e) => { this.overlay = e.target.checked; this.settings.redraw(); } }), "Overlay all paths in the main view") : null,
-      h("p", { class: "muted" }, this.scope === "saddle" ? `${fmt.count(items.length, "endpoint pair")} from this saddle.` : `${fmt.count(items.length, "product type")} with matching energy and motion.`),
-      runs.length ? h("section", {}, h("h3", {}, "DoubleMin runs"),
-        h("p", { class: "muted" }, "Each run is listed separately. Clicking selects its endpoint pair; the viewer shows that pair's representative stored frames."),
+      this.compareBar(),
+      h("p", { class: "muted" }, this.scope === "saddle" ? `${fmt.count(items.length, "endpoint pair")} from this saddle (distinct pairs; each DoubleMin run is under "All runs").` : `${fmt.count(items.length, "product type")} with matching energy and motion.`),
+      h("div", { class: "list-tools" },
+        this.scope === "saddle" && items.length > 1 ? h("label", { class: "check" }, h("input", { type: "checkbox", checked: this.overlay, onchange: (e) => { this.overlay = e.target.checked; this.settings.redraw(); } }), "Overlay all paths") : null,
+        items.length > 1 ? h("button", { type: "button", title: "Compare every listed pair (up to 8) against the selected one", onclick: () => this.setCompare(items.slice(0, 8).map(({ r }) => r.id).filter((id) => id !== this.reaction)) }, "Compare all") : null),
+      h("div", { class: "rows" }, items.map(({ r, n }, index) => h("div", { class: "row-wrap" }, this.compareToggle(r), h("button", { type: "button", class: `row${r.id === this.reaction ? " on" : ""}`, onclick: () => this.select(r.id) },
+        h("span", { class: "row-main" }, h("i", { class: "swatch", style: `background:var(${SM.FAN_COLOURS[index % 8]})` }), h("b", {}, `${this.store.label(r.reactant)} → ${this.store.label(r.product)}`)),
+        h("span", { class: "row-sub" }, `${fmt.ev(r.barrier)} eV barrier · ${fmt.signed(r.reactionEnergy)} eV · ${this.scope === "saddle" ? fmt.count(n, "DoubleMin") : fmt.count(n, "reaction")}`))))),
+      runs.length ? h("details", { class: "runs" }, h("summary", {}, `All DoubleMin runs (${runs.length})`),
         h("div", { class: "rows" }, runs.map(({ r, run }, index) => h("button", { type: "button", class: "row", onclick: () => this.select(r.id) },
           h("span", { class: "row-main" }, `Run ${index + 1}: ${this.store.label(run.reactant)} ↔ ${this.store.label(run.product)}`),
-          h("span", { class: "row-sub" }, `${run.seedConnected ? "Seed-connected" : "Unconnected"} · ${fmt.signed(run.eR)} ↔ ${fmt.signed(run.eP)} eV`),
-          h("span", { class: "row-sub" }, `Observation ${run.observation} · Search find ${run.findSeq ?? "unknown"}`))))) : null,
-      h("div", { class: "rows" }, items.map(({ r, n }, index) => h("button", { type: "button", class: `row${r.id === this.reaction ? " on" : ""}`, onclick: () => this.select(r.id) },
-        h("span", { class: "row-main" }, h("i", { class: "swatch", style: `background:var(${SM.FAN_COLOURS[index % 8]})` }), h("b", {}, `${this.store.label(r.reactant)} → ${this.store.label(r.product)}`)),
-        h("span", { class: "row-sub" }, `${fmt.signed(r.reactionEnergy)} eV · ${this.scope === "saddle" ? fmt.count(n, "DoubleMin") : fmt.count(n, "reaction")}`)))),
+          h("span", { class: "row-sub" }, `${run.seedConnected ? "Seed-connected" : "Unconnected"} · ${fmt.signed(run.eR)} ↔ ${fmt.signed(run.eP)} eV · observation ${run.observation}`))))) : null,
     );
   }
 
@@ -369,6 +410,12 @@ SM.Workspace = class Workspace {
     else if (e.key === "ArrowUp" || e.key === "ArrowLeft") { e.preventDefault(); this.step(-1); }
     else if (e.key === " " && e.target.tagName !== "BUTTON") { e.preventDefault(); this.togglePlay(); }
     else if (e.key === "Escape") this.callbacks.back();
+    else if ((e.key === "b" || e.key === "B") && !e.altKey) {
+      e.preventDefault();
+      this.settings.bonds = !this.settings.bonds;
+      if (this.bondBox) this.bondBox.checked = this.settings.bonds;
+      this.settings.redraw();
+    }
   }
 
   show() { this.root.hidden = false; this.settings.redraw(); }
