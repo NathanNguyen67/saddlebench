@@ -19,13 +19,20 @@ SM.ViewSettings = class ViewSettings {
       focus: true, radius: 12, focusAtom: null, supercell: 1, fade: 0,
       threshold: 0.2, colour: "highlight", vectors: new Set(), vectorScale: 1, vectorMin: 0.2,
       pinned: new Set(), labels: true, selected: null,
+      /* atomScale multiplies drawn radii; keepView keeps the camera pivot and image wrapping when the reaction
+         changes; compare maps reaction id -> colour slot, and those reactions' movers are drawn in that colour. */
+      atomScale: 1, keepView: false, compare: new Map(),
     }, overrides);
     this.viewers = new Set();
   }
 
   redraw() { this.viewers.forEach((viewer) => viewer.draw()); }
 
-  resetCamera() { Object.assign(this, { yaw: 0.5, pitch: -1.0, zoom: 1, panX: 0, panY: 0 }); this.redraw(); }
+  resetCamera() {
+    Object.assign(this, { yaw: 0.5, pitch: -1.0, zoom: 1, panX: 0, panY: 0 });
+    this.viewers.forEach((viewer) => { viewer.centre = null; });
+    this.redraw();
+  }
 
   camera(name) {
     const presets = { top: [0, 0], side: [0, -Math.PI / 2], bottom: [0, Math.PI], iso: [0.5, -1.0] };
@@ -53,7 +60,7 @@ SM.Viewer = class Viewer {
   setReaction(reaction) {
     this.reaction = reaction;
     this.fields.clear();
-    this.centre = null;
+    if (!this.settings.keepView) this.centre = null;
     this.draw();
   }
 
@@ -92,7 +99,20 @@ SM.Viewer = class Viewer {
     if (s.colour === "fixed") return this.store.fixed[atom] ? palette.fixed : palette.free;
     /* "highlight": element colours everywhere; movers keep full colour and get a ring (see isMover), the rest fade a little. */
     if (this.isMover(atom, sizes, primary)) return element;
+    const compared = primary ? this.compareColour(atom, palette) : null;
+    if (compared) return compared;
     return [element[0] * 0.72 + palette.neutral[0] * 0.28, element[1] * 0.72 + palette.neutral[1] * 0.28, element[2] * 0.72 + palette.neutral[2] * 0.28];
+  }
+
+  /* Colour of the first compared reaction (other than the shown one) in which this atom moves, else null. */
+  compareColour(atom, palette) {
+    const s = this.settings;
+    if (!s.compare.size || this.store.fixed[atom]) return null;
+    for (const [reaction, slot] of s.compare) {
+      if (reaction === this.reaction) continue;
+      if (this.store.moveSizes(reaction)[atom] > s.threshold) return palette.compare[slot % palette.compare.length];
+    }
+    return null;
   }
 
   isMover(atom, sizes, primary) {
@@ -103,7 +123,8 @@ SM.Viewer = class Viewer {
   emphasised(atom, sizes, primary) {
     const s = this.settings;
     if (!primary) return false;
-    return (sizes[atom] > s.threshold && !this.store.fixed[atom]) || s.pinned.has(atom) || s.selected === atom;
+    return (sizes[atom] > s.threshold && !this.store.fixed[atom]) || s.pinned.has(atom) || s.selected === atom
+      || (s.compare.size > 0 && s.colour === "highlight" && this.compareColour(atom, this.lastPalette) !== null);
   }
 
   /* Per-atom lattice shift putting each atom's saddle position in the image nearest centre (fixed for the reaction). */
@@ -146,7 +167,9 @@ SM.Viewer = class Viewer {
       const hex = style.getPropertyValue(name).trim().replace("#", "");
       return [parseInt(hex.slice(0, 2), 16) / 255, parseInt(hex.slice(2, 4), 16) / 255, parseInt(hex.slice(4, 6), 16) / 255];
     };
-    return { accent: read("--accent"), neutral: read("--atom"), fog: read("--stage"), fixed: read("--fixed"), free: read("--free") };
+    this.lastPalette = { accent: read("--accent"), neutral: read("--atom"), fog: read("--stage"), fixed: read("--fixed"), free: read("--free"),
+      compare: (SM.FAN_COLOURS || []).map(read) };
+    return this.lastPalette;
   }
 
   buildScene(palette) {
@@ -170,7 +193,7 @@ SM.Viewer = class Viewer {
       }
       const colour = this.colourFor(atom, sizes, range, palette, primary);
       const alpha = s.fade > 0 && !this.emphasised(atom, sizes, primary) ? 1 - s.fade : 1;
-      this.buffer.set([x, y, z, SM.geo.RADII[store.numbers[atom]] * 0.92, colour[0], colour[1], colour[2], this.isMover(atom, sizes, primary) ? 1 : 0, alpha], cursor * SM.STRIDE);
+      this.buffer.set([x, y, z, SM.geo.RADII[store.numbers[atom]] * 0.92 * s.atomScale, colour[0], colour[1], colour[2], this.isMover(atom, sizes, primary) ? 1 : 0, alpha], cursor * SM.STRIDE);
       drawn.push({ atom, x, y, z, primary });
       cursor += 1;
     };
@@ -195,6 +218,26 @@ SM.Viewer = class Viewer {
               push(atom, positions[i] + wrap[i] + shift[0], positions[i + 1] + wrap[i + 1] + shift[1], positions[i + 2] + wrap[i + 2] + shift[2], home);
             }
           }
+        }
+      }
+    }
+    /* Ghosts: each compared reaction's movers at the same path position, translucent in its colour, so two
+       reactions moving the same atoms (e.g. mirror-image saddles) show both paths. */
+    if (!s.focus && s.compare.size) {
+      const wrap = this.wrapShifts(centre);
+      this.ghostBuffer = this.ghostBuffer || new Float32Array(store.n * 3);
+      for (const [reaction, slot] of s.compare) {
+        if (reaction === this.reaction) continue;
+        const ghost = store.path(reaction, s.t, this.ghostBuffer);
+        const colour = palette.compare[slot % palette.compare.length];
+        for (const atom of store.movers(reaction, s.threshold)) {
+          const i = atom * 3;
+          if ((cursor + 1) * SM.STRIDE > this.buffer.length) {
+            const bigger = new Float32Array(this.buffer.length * 2); bigger.set(this.buffer); this.buffer = bigger;
+          }
+          this.buffer.set([ghost[i] + wrap[i], ghost[i + 1] + wrap[i + 1], ghost[i + 2] + wrap[i + 2],
+            SM.geo.RADII[store.numbers[atom]] * 0.92 * s.atomScale * 0.98, colour[0], colour[1], colour[2], 0, 0.55], cursor * SM.STRIDE);
+          cursor += 1;
         }
       }
     }
@@ -325,7 +368,7 @@ SM.Viewer = class Viewer {
     this.drawn.forEach((d) => {
       if (!d.primary || !(s.pinned.has(d.atom) || s.selected === d.atom)) return;
       const p = this.project(d.x, d.y, d.z, this.view);
-      const radius = SM.geo.RADII[this.store.numbers[d.atom]] * 0.92 * this.view.scale;
+      const radius = SM.geo.RADII[this.store.numbers[d.atom]] * 0.92 * this.settings.atomScale * this.view.scale;
       ctx.strokeStyle = style.getPropertyValue("--ink").trim();
       ctx.lineWidth = 2.5;
       ctx.beginPath();
@@ -349,7 +392,7 @@ SM.Viewer = class Viewer {
     let best = null;
     this.drawn.forEach((d) => {
       const p = this.project(d.x, d.y, d.z, this.view);
-      const radius = SM.geo.RADII[this.store.numbers[d.atom]] * 0.92 * this.view.scale;
+      const radius = SM.geo.RADII[this.store.numbers[d.atom]] * 0.92 * this.settings.atomScale * this.view.scale;
       if (Math.hypot(p[0] - x, p[1] - y) <= radius && (!best || p[2] > best.depth)) best = { atom: d.atom, depth: p[2] };
     });
     return best ? best.atom : null;

@@ -6,7 +6,12 @@ SM.FAN_COLOURS = ["--p1", "--p2", "--p3", "--p4", "--p5", "--p6", "--p7", "--p8"
 SM.Workspace = class Workspace {
   constructor(root, store, renderer, callbacks) {
     Object.assign(this, { root, store, renderer, callbacks });
-    this.settings = new SM.ViewSettings({ radius: 11, focus: false, fade: 0 });
+    this.settings = new SM.ViewSettings({ radius: 11, focus: false, fade: 0, keepView: true });
+    /* #...&cmp=12,40 opens with those reactions compared (shareable links). */
+    try {
+      (new URLSearchParams(location.hash.slice(1)).get("cmp") || "").split(",").filter(Boolean).map(Number)
+        .filter((id) => Number.isInteger(id) && id >= 0 && id < store.reactions.length).forEach((id, k) => this.settings.compare.set(id, k));
+    } catch (error) { /* no hash */ }
     this.refFilter = "all";
     if (store.score) store.score.listeners.add(() => { if (this.cls) { this.renderSide(); this.inspector.render(); } });
     this.tab = "reactions";
@@ -47,6 +52,7 @@ SM.Workspace = class Workspace {
     const value = (text) => h("output", {}, text);
     const thresholdValue = value(`${s.threshold.toFixed(2)} Å`); const scaleValue = value("1.0×");
     const fadeValue = value(`${Math.round(s.fade * 100)}%`);
+    const sizeValue = value("1.00×");
     const bulk = this.viewer.repeatAxes()[2];
     this.supercell = h("select", { "aria-label": "Supercell", onchange: (e) => { s.supercell = Number(e.target.value); s.redraw(); } },
       [1, 2, 3].map((n) => h("option", { value: n }, bulk ? `${n}×${n}×${n}` : `${n}×${n}`)));
@@ -82,7 +88,9 @@ SM.Workspace = class Workspace {
               tool("View",
                 h("label", { class: "field-inline" }, "Supercell", this.supercell),
                 h("label", { class: "field-inline" }, "Fade others",
-                  h("input", { type: "range", min: 0, max: 0.92, step: 0.02, value: s.fade, "aria-label": "Fade atoms that are not moving, pinned or selected", oninput: (e) => { s.fade = Number(e.target.value); fadeValue.textContent = `${Math.round(s.fade * 100)}%`; s.redraw(); } }), fadeValue)),
+                  h("input", { type: "range", min: 0, max: 0.92, step: 0.02, value: s.fade, "aria-label": "Fade atoms that are not moving, pinned or selected", oninput: (e) => { s.fade = Number(e.target.value); fadeValue.textContent = `${Math.round(s.fade * 100)}%`; s.redraw(); } }), fadeValue),
+                h("label", { class: "field-inline" }, "Atom size",
+                  h("input", { type: "range", min: 0.2, max: 1.5, step: 0.05, value: s.atomScale, "aria-label": "Atom radius scale", oninput: (e) => { s.atomScale = Number(e.target.value); sizeValue.textContent = `${s.atomScale.toFixed(2)}×`; s.redraw(); } }), sizeValue)),
               tool("Highlight",
                 h("input", { type: "range", min: 0.05, max: 2, step: 0.05, value: s.threshold, "aria-label": "Highlight atoms moving more than this distance", oninput: (e) => { s.threshold = Number(e.target.value); thresholdValue.textContent = `${s.threshold.toFixed(2)} Å`; this.updateMovers(); s.redraw(); } }), thresholdValue, this.moverCount,
                 h("label", { class: "field-inline" }, "Colour", h("select", { onchange: (e) => { s.colour = e.target.value; s.redraw(); } },
@@ -90,7 +98,9 @@ SM.Workspace = class Workspace {
               tool("Vectors", vectorBoxes,
                 h("label", { class: "field-inline" }, "Scale", h("input", { type: "range", min: 0.25, max: 4, step: 0.25, value: 1, oninput: (e) => { s.vectorScale = Number(e.target.value); scaleValue.textContent = `${s.vectorScale.toFixed(1)}×`; s.redraw(); } }), scaleValue)),
               tool("Camera", ["top", "side", "bottom", "iso"].map((name) => h("button", { type: "button", onclick: () => s.camera(name) }, name[0].toUpperCase() + name.slice(1))),
-                h("button", { type: "button", onclick: () => s.resetCamera() }, "Reset")),
+                h("button", { type: "button", onclick: () => s.resetCamera() }, "Reset"),
+                h("label", { class: "check", title: "Keep the camera centre when switching reactions (Reset recentres on the current reaction)" },
+                  h("input", { type: "checkbox", checked: s.keepView, onchange: (e) => { s.keepView = e.target.checked; } }), "Keep view")),
               tool("Pin atoms", this.pinInput, h("button", { type: "button", onclick: () => this.pinFromText(this.pinInput.value) }, "Pin"),
                 h("button", { type: "button", onclick: () => this.clearPins() }, "Clear"), this.pinCount))),
           this.fanSection),
@@ -143,13 +153,30 @@ SM.Workspace = class Workspace {
         this.store.score ? h("label", { class: "field-inline" }, "Reference", h("select", { onchange: (e) => { this.refFilter = e.target.value; this.renderSide(); } },
           [["all", "All reactions"], ["reference", "Reference only"], ["missed", "Missed only"]].map(([v, t]) => h("option", { value: v, selected: v === this.refFilter }, t)))) : null),
       rows.length ? null : h("p", { class: "muted" }, "No reactions match these filters."),
-      h("div", { class: "rows" }, rows.map((r) => h("button", { type: "button", class: `row${r.id === this.reaction ? " on" : ""}`, "data-reaction": r.id, onclick: () => this.select(r.id) },
+      this.settings.compare.size ? h("div", { class: "compare-bar" }, h("span", {}, `Comparing ${this.settings.compare.size}: their movers are coloured in the viewer`),
+        h("button", { type: "button", onclick: () => { this.settings.compare.clear(); this.renderSide(); this.settings.redraw(); } }, "Clear")) : null,
+      h("div", { class: "rows" }, rows.map((r) => h("div", { class: "row-wrap" }, this.compareToggle(r), h("button", { type: "button", class: `row${r.id === this.reaction ? " on" : ""}`, "data-reaction": r.id, onclick: () => this.select(r.id) },
         h("span", { class: "row-main" }, h("b", {}, `${fmt.ev(r.barrier)} eV`), this.store.score ? this.store.score.pill(r.id) : null, h("span", {}, `→ ${this.store.label(r.product)}`)),
         h("span", { class: "row-sub" }, `${r.saddle.slice(4, 10)} · ${fmt.count(r.motion.moved, "atom")} · ${fmt.signed(r.reactionEnergy)} eV${r.curvature === null || r.curvature === undefined ? "" : ` · κ ${r.curvature.toFixed(2)}`}`),
         r.saddleMinima > 2 ? h("span", { class: "row-flag" }, `${r.saddleMinima} minima`) : null,
-        this.store.score?.nearNull(r.id) ? h("span", { class: "row-flag", title: "The product is barely distinct from the seed" }, "near-null") : null))),
+        this.store.score?.nearNull(r.id) ? h("span", { class: "row-flag", title: "The product is barely distinct from the seed" }, "near-null") : null)))),
     );
     this.sidebar.querySelector(".row.on")?.scrollIntoView({ block: "nearest" });
+  }
+
+  /* Toggle a reaction into the comparison set; each gets the next free colour slot. */
+  compareToggle(r) {
+    const { h } = SM;
+    const map = this.settings.compare;
+    const slot = map.get(r.id);
+    return h("button", { type: "button", class: "cmp", "aria-pressed": String(slot !== undefined),
+      title: slot !== undefined ? "Stop comparing this reaction" : "Compare: colour this reaction's movers in the viewer",
+      style: slot !== undefined ? `background:var(${SM.FAN_COLOURS[slot % 8]});border-color:var(${SM.FAN_COLOURS[slot % 8]})` : null,
+      onclick: () => {
+        if (map.has(r.id)) map.delete(r.id);
+        else { const used = new Set(map.values()); let k = 0; while (used.has(k)) k += 1; map.set(r.id, k); }
+        this.renderSide(); this.settings.redraw();
+      } }, slot !== undefined ? "" : "+");
   }
 
   saddleReactions() { return this.bySaddle.get(this.store.reactions[this.reaction].saddle) || []; }

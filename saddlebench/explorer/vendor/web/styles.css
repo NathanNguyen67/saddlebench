@@ -93,6 +93,10 @@ input[type=range] { accent-color: var(--accent); min-width: 90px; }
 .side-body { display: flex; flex-direction: column; gap: 9px; padding: 10px; overflow-y: auto; min-height: 0; }
 .list-tools { display: flex; flex-wrap: wrap; gap: 8px 12px; }
 .rows { display: grid; gap: 5px; }
+.row-wrap { display: flex; gap: 5px; align-items: stretch; }
+.row-wrap .row { flex: 1; min-width: 0; }
+.cmp { flex: 0 0 22px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; color: var(--muted); font-weight: 700; }
+.compare-bar { display: flex; gap: 8px; align-items: center; justify-content: space-between; font-size: 12px; color: var(--muted); margin: 4px 0; }
 .row { display: grid; gap: 1px; width: 100%; padding: 7px 9px; text-align: left; background: none; border: 1px solid var(--line); border-radius: 7px; }
 .row:hover { background: var(--soft); }
 .row.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
