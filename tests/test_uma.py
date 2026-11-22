@@ -520,6 +520,26 @@ def test_one_profile_candidate_still_requires_exact_match():
         assert (match and match["identity_id"]) == expected
 
 
+
+def test_prediction_credits_every_reference_within_the_cutoff():
+    atoms = Atoms("H8", positions=[[j*.75, 0., 0.] for j in range(8)])
+    refs = {}
+    for name, shift in (("a", 0.0), ("b", 0.15), ("far", 0.9)):
+        ref = atoms.copy()
+        ref.positions[-1, 1] += shift
+        refs[name] = geometry(ref, arrays=True)
+    scorer = SeedScorer(refs)
+    prediction = atoms.copy()
+    prediction.positions[-1, 1] += 0.08                          # 0.08 A from a, 0.07 A from b
+    geom = geometry(prediction, arrays=True)
+    assert scorer.nearest(geom)["identity_id"] == "b"           # nearest only: unchanged API
+    assert [m["identity_id"] for m in scorer.within(geom)] == ["b", "a"]
+    report = scorer.score([geom], group_outside=False)
+    assert report["matched_saddle_ids_by_threshold"]["0.20"] == ["a", "b"]   # both twins credited
+    assert report["matched_saddle_ids_by_threshold"]["0.05"] == []
+    old_style = scorer.score([geom], group_outside=False, known=[scorer.nearest(geom)])
+    assert old_style["matched_saddle_ids_by_threshold"]["0.20"] == ["b"]     # a cached single match still works
+
 def test_dataset_score_and_seed_download(export, capsys):
     import shutil
     from ase.io import read

@@ -28,8 +28,9 @@ class PreparedReferenceMatcher:
         self.prepared = {}
         self.prepare = prepare_geometry if prepare is None else prepare
 
-    def match(self, submission, *, candidates=None, first=False, ordered_bounds=None):
-        """With sorted lower bounds, only the nearest match is guaranteed."""
+    def match(self, submission, *, candidates=None, first=False, ordered_bounds=None, all_within=False):
+        """With sorted lower bounds, only the nearest match is guaranteed, unless all_within: then the cutoff stays
+        0.20 A and every reference within it is returned (candidates are still pruned by their lower bounds)."""
         from saddlebench.matching.geometry import core_drift_maxdev_prepared
         matches = []
         incompatible = set()
@@ -63,7 +64,7 @@ class PreparedReferenceMatcher:
                 incompatible.add(str(exc))
                 continue
             if distance <= limit:
-                if ordered_bounds is not None:
+                if ordered_bounds is not None and not all_within:
                     limit = distance
                 matches.append({'reference_id': r['reference_id'],
                                 'identity_id': r['identity_id'],

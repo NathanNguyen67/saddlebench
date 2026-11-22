@@ -16,7 +16,7 @@ from saddlebench.reference.uma import UmaDataset, confidence_sources
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("export", type=Path, help="Local export directory, or - for the pinned public export")
-    parser.add_argument("saddlemotif_build", type=Path, help="Explorer v2 build/ at SaddleMotif commit 93c30fa")
+    parser.add_argument("saddlemotif_build", type=Path, help="Explorer v2 build/ (SaddleMotif explorer-v2-bench-20261121, f927803 or later: infinite slides only)")
     parser.add_argument("output", type=Path)
     parser.add_argument("--all-seeds", action="store_true", help="Include seeds below confidence")
     args = parser.parse_args()

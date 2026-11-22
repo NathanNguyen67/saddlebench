@@ -56,12 +56,12 @@ def first_hit_events(attempts, evaluated, matches, reference, *, proposal_time=N
     weights = rate_weights(reference)
     seen = [set() for _ in THRESHOLDS]
     events = []
-    for time, match in zip(times, matches):
-        if match is None:
-            continue
-        sid, distance = match["identity_id"], match["maxdev_angstrom"]
-        for index, threshold in enumerate(THRESHOLDS):
-            if distance <= threshold and sid not in seen[index]:
-                seen[index].add(sid)
-                events.append((time, index, weights[sid]))
+    for time, found in zip(times, matches):
+        # one prediction credits every reference it lies within a cutoff of (a single match or None also accepted)
+        for match in ([] if found is None else [found] if isinstance(found, dict) else found):
+            sid, distance = match["identity_id"], match["maxdev_angstrom"]
+            for index, threshold in enumerate(THRESHOLDS):
+                if distance <= threshold and sid not in seen[index]:
+                    seen[index].add(sid)
+                    events.append((time, index, weights[sid]))
     return clock, events

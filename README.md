@@ -77,13 +77,13 @@ Glossary used in the explorer: a **saddle** is one saddle group with a complete 
 
 For one case, `--elapsed-seconds` and `--physical-pes-calls` record optional search costs. `--recall-only` reports all unmatched frames and skips their distinct-group count. Omit it to group unmatched frames against earlier unmatched representatives in submission order. Unmatched frames can include predictions corresponding to excluded aligned slides.
 
-Each prediction is assigned to the closest eligible saddle group with **core-drift maximum deviation at most 0.20 Å**. Saddle ID breaks distance ties. Each group counts once per seed and submission. The 0.10 and 0.05 Å fields use smaller cutoffs. Recall is found groups divided by eligible groups, with an empty or null value for a seed with zero eligible groups.
+A prediction credits **every** eligible saddle group within **core-drift maximum deviation 0.20 Å** of it, not only the closest (since Nov 22, 2026; two reference groups can lie within 0.2 Å of each other when the campaign's complete-link grouping split one saddle). Each group counts once per seed and submission. The 0.10 and 0.05 Å fields use smaller cutoffs. Recall is found groups divided by eligible groups, with an empty or null value for a seed with zero eligible groups.
 
 ### Benchmark reference
 
 The pinned dataset supplies the actual repeat tail in scheduling order and the confidence flag for the mean of 400 shuffled tails. SaddleBench accepts either criterion and reports which passed. The dataset also supplies the eligible saddle groups. Eligibility requires a seed-connected pair with complete DoubleMin, distinct endpoints and a representative barrier strictly below 1.0 eV. The scorer uses geometry for identity. Endpoint energies and the choice between multiple product minima play no role in matching or credit.
 
-An aligned slide contains at least six free atoms in a moving component. Following SaddleMotif Explorer v2, moved atoms displace more than 0.5 Å after periodic alignment and drift removal. Edges join moved atoms initially closer than 3.3 Å whose pairwise distance changes by less than 0.15 Å. The directions within the group must have a resultant of at least 0.9. A reference saddle is excluded if **all** its eligible seed-connected endpoint pairs give an aligned slide. The filter uses the public canonical endpoints and excludes 194 of 4,908 confident reference groups. [SaddleMotif rule](https://github.com/NathanNguyen67/SaddleMotif/blob/93c30fa/explorer_v2/build/motion.py)
+An aligned slide contains at least six free atoms in a moving component. Following SaddleMotif Explorer v2, moved atoms displace more than 0.5 Å after periodic alignment and drift removal. Edges join moved atoms initially closer than 3.3 Å whose pairwise distance changes by less than 0.15 Å. The directions within the group must have a resultant of at least 0.9, and the group must be **infinite**: its neighbour graph reaches one of its own periodic images, i.e. a whole layer or chain slides (since Nov 22, 2026). A finite group gliding together, such as Pt343's 7-atom island, is a real reaction and stays in the reference. A reference saddle is excluded if **all** its eligible seed-connected endpoint pairs give an aligned slide. The filter uses the public canonical endpoints and excludes 56 of 4,908 confident reference groups (194 under the earlier rule that also excluded finite islands). [SaddleMotif rule](https://github.com/NathanNguyen67/SaddleMotif/blob/explorer-v2-bench-20261121/explorer_v2/build/motion.py)
 
 ## Prefilled benchmark inputs
 
@@ -112,7 +112,7 @@ With the exact Search ZIP and a compatible SaddleMotif source tree and environme
 ```sh
 python scripts/generate_uma_motif.py --saddlemotif /path/to/SaddleMotif \
   --geometry-zip saddlebench_uma_benchmark_trajectories.zip \
-  --attempts benchmarks/uma/attempts.parquet --output-dir proposals --workers 4
+  --attempts benchmarks/uma/attempts.parquet --output-dir proposals --workers 4 --placement-workers 4
 saddlebench baseline --geometry-zip saddlebench_uma_benchmark_trajectories.zip \
   --motif-dir proposals --recall-only --workers 4 --output motif.csv --html motif.html
 ```

@@ -124,11 +124,11 @@ def nearest_chunk(task, *, scoring):
     """Nearest reference match of each proposal frame in [start, stop) of one proposal file."""
     parent, mid, path, start, stop = task
     scorer = scoring.structure(parent, [mid])[mid]
-    return [scorer.nearest(geometry(atoms, arrays=True)) for atoms in iread(path, index=f"{start}:{stop}")]
+    return [scorer.within(geometry(atoms, arrays=True)) for atoms in iread(path, index=f"{start}:{stop}")]
 
 
 def motif_nearest(pool, scoring, structures, motif_dir):
-    """(minimum_id, method) -> nearest match of every proposal frame, computed in parallel chunks."""
+    """(minimum_id, method) -> reference matches of every proposal frame, computed in parallel chunks."""
     tasks = []
     for parent, submissions in structures:
         for mid, method in submissions:

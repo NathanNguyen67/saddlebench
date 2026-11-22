@@ -36,6 +36,12 @@ class SeedScorer:
             self.index = ProfileIndex.build([record["geometry"] for record in self.records])
 
     def nearest(self, prediction):
+        matches = self.within(prediction, every=False)
+        return matches[0] if matches else None
+
+    def within(self, prediction, every=True):
+        """Reference matches of one prediction, nearest first: every reference within 0.20 A (every=True), or only
+        the nearest. A prediction credits each reference it lies within a cutoff of, not only its nearest."""
         ranked = self.index.candidates(prediction, THRESHOLDS[0]) if self.index is not None else None
         if ranked is None:
             if self.anchors is None:
@@ -46,30 +52,31 @@ class SeedScorer:
         else:
             candidates, bounds = ranked
         ordered = np.argsort(bounds, kind="stable")
-        matches = self.matcher.match(
+        return self.matcher.match(
             {"geometry": prediction},
-            ordered_bounds=((bounds[i], self.records[candidates[i]]) for i in ordered),
+            ordered_bounds=((bounds[i], self.records[candidates[i]]) for i in ordered), all_within=every,
         )["matches"]
-        return matches[0] if matches else None
 
     def score(self, predictions, *, group_outside=True, on_prediction=None, known=()):
-        """known: nearest results already computed for the first len(known) predictions (same scorer), reused as is."""
+        """known: match lists (within()) already computed for the first len(known) predictions, reused as is.
+        on_prediction receives each prediction's match list (empty when it matches nothing)."""
         hits = {threshold: set() for threshold in THRESHOLDS}
         outside = []
         count = unmatched = 0
         for prediction in predictions:
-            nearest = known[count] if count < len(known) else self.nearest(prediction)
+            found = as_matches(known[count]) if count < len(known) else self.within(prediction)
             count += 1
             if on_prediction is not None:
-                on_prediction(nearest)
-            if nearest is None:
+                on_prediction(found)
+            if not found:
                 unmatched += 1
                 if group_outside:
                     outside.append(prediction)
                 continue
-            for threshold, groups in hits.items():
-                if nearest["maxdev_angstrom"] <= threshold:
-                    groups.add(nearest["identity_id"])
+            for match in found:
+                for threshold, groups in hits.items():
+                    if match["maxdev_angstrom"] <= threshold:
+                        groups.add(match["identity_id"])
         eligible = len(self.records)
         return {
             "predictions_scored": count,
@@ -84,6 +91,13 @@ class SeedScorer:
             "outside_reference_predictions": unmatched,
             "outside_reference_groups": distinct_outside(outside) if group_outside else None,
         }
+
+
+def as_matches(value):
+    """A match list from within(); also accepts an older single nearest match or None."""
+    if value is None:
+        return []
+    return [value] if isinstance(value, dict) else value
 
 
 def distinct_outside(predictions):

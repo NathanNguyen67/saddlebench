@@ -20,7 +20,7 @@ from saddlebench.reference.uma import UmaDataset, confidence_sources
 from saddlebench.uma_baseline import load_attempts, METHODS
 
 
-def generate_arm(arm, *, source, archive, output, seed_paths):
+def generate_arm(arm, *, source, archive, output, seed_paths, placement_workers=1):
     (case, method), rows = arm
     destination = output / method / f"{case}.traj"
     if destination.exists():
@@ -54,7 +54,7 @@ def generate_arm(arm, *, source, archive, output, seed_paths):
             result = subprocess.run(
                 [sys.executable, str(source / "scripts/run_generic_workflow.py"),
                  "--manifest", str(manifest), "--target", str(seed_paths[case]),
-                 "--out", str(work / "generated")],
+                 "--out", str(work / "generated"), "--placement-workers", str(placement_workers)],
                 stdout=log, stderr=subprocess.STDOUT,
             )
         if result.returncode:
@@ -89,7 +89,10 @@ def main():
     parser.add_argument("--case-id", action="append", help="Process only these benchmark cases")
     parser.add_argument("--exclude-case-id", action="append", default=[], help="Skip a case being generated separately")
     parser.add_argument("--include-unconfident", action="store_true")
-    parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument("--workers", type=int, default=1, help="benchmark arms generated at once")
+    parser.add_argument("--placement-workers", type=int, default=1,
+                        help="SaddleMotif class-placement processes per arm (the campaign uses 6); total processes = "
+                             "workers x placement-workers. Placement was serial in the published run (37.9 h).")
     args = parser.parse_args()
     if args.workers < 1:
         parser.error("--workers must be positive")
@@ -122,7 +125,8 @@ def main():
                if seed["case_id"] in seed_paths and not seed_paths[seed["case_id"]].exists()}
     for mid, atoms in data.frames(missing):
         write(seed_paths[missing[mid]["case_id"]], atoms)
-    run = partial(generate_arm, source=source, archive=archive, output=output, seed_paths=seed_paths)
+    run = partial(generate_arm, source=source, archive=archive, output=output, seed_paths=seed_paths,
+                  placement_workers=args.placement_workers)
     def event_count(arm):
         return len({row["saddle_id"] or row["seq"] for row in arm[1] if row["converged"]})
 
