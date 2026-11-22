@@ -188,8 +188,10 @@ SM.Gallery = class Gallery {
       const card = this.cards.get(entry.target.dataset.cls);
       if (entry.isIntersecting) {
         if (!card.viewer) {
-          const settings = new SM.ViewSettings({ radius: 7.5, yaw: 0.55, pitch: -0.95, fade: 0.5 });
+          /* Whole cells framed on the movers (supercell when the cell is small) rather than a cut-out sphere. */
+          const settings = new SM.ViewSettings({ radius: 7.5, yaw: 0.55, pitch: -0.95, fade: 0.5, focus: false });
           card.viewer = new SM.Viewer(card.canvas, this.store, this.renderer, settings, { interactive: false, overlays: false });
+          settings.supercell = card.viewer.previewSupercell(settings.radius);
           card.viewer.setReaction(card.cls.representative);
         }
         this.visible.add(card);

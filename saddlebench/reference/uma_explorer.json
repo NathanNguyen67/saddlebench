@@ -1,234 +1,234 @@
 {
  "hf_revision": "acdac15b98282a9137a76c060913fcc0ce08462b",
- "data_revision": "ef3118944c33c683502b37d72ebd170ef98077cd",
+ "data_revision": "0ef7be8a98362ccf55655e88bf4adf91ae5bc238",
  "data_branch": "uma-explorer-data-20261121",
  "schema": "saddlemotif-explorer-v2",
- "built_from": "lite.epoch56_final_local_20261119_1256.db (the UMA export source), SaddleMotif explorer_v2 build_structure.py, Nov 19 2026",
+ "built_from": "lite.epoch56_final_local_20261119_1256.db (the UMA export source), SaddleMotif explorer_v2 build_structure.py at f927803 (infinite aligned slides only, per-seed O06 page for the benchmark seed, leftover saddles in same-endpoint classes), Nov 22 2026",
  "payloads": {
   "lit_battery:B01": {
    "path": "explorer/lit_battery-B01.json.gz",
-   "sha256": "f93a0dd883fe2afee8d95e3c8079bcc719f55ce7734dcfc08e94801764a887a8",
-   "bytes": 1042254
+   "sha256": "362ad0b07debede530d7d8e167d1f3dc9bfbc5bbd530ac7b07c290b781640daa",
+   "bytes": 1042415
   },
   "lit_battery:B02": {
    "path": "explorer/lit_battery-B02.json.gz",
-   "sha256": "79043d6a2bd6465f1bd8893285ad8084da58186a40fd45d97036fe04ede1505b",
-   "bytes": 65662
+   "sha256": "44e7ab88b515333cf803c5fe6595912b5295000c597c7d3c77d7492142f9aedf",
+   "bytes": 65683
   },
   "lit_battery:B03": {
    "path": "explorer/lit_battery-B03.json.gz",
-   "sha256": "f50a93c3ff48890e16bd06d1e630fe5b5c3a5385be0673c134d92f2a4f38e9e5",
-   "bytes": 142507
+   "sha256": "afc1992c2c2aede7f101130d5ed1424a9600f1d5cdd864c74dfa2bf4af0435f9",
+   "bytes": 142644
   },
   "lit_battery:B04": {
    "path": "explorer/lit_battery-B04.json.gz",
-   "sha256": "99545fe890a86dbf87b64d16b42aeea11ff2b25a64f3be4a31cba7a16814c944",
-   "bytes": 449718
+   "sha256": "c128b57a20e9f380345fd2b88c8f63fd26cf6fb3e3b0f066bff05c8076b5450c",
+   "bytes": 449795
   },
   "lit_battery:B05": {
    "path": "explorer/lit_battery-B05.json.gz",
-   "sha256": "fca889735cfc6e6b82c07632148cd07c18b9185f6c4f28c9972ff180b614b9cf",
-   "bytes": 184574
+   "sha256": "0235422e900fb3d3ad7a8f8fa8b657149e0eff52c20fb57198b0125a2e129b35",
+   "bytes": 184608
   },
   "lit_battery:B06": {
    "path": "explorer/lit_battery-B06.json.gz",
-   "sha256": "cbccddbf02e1627a86aa602bb44784fb85a1a3740efd335607e2b6d85ed939f5",
-   "bytes": 1837810
+   "sha256": "e5c0791d3b19febe2431f21155e0770ac21f77b22655157fb77774d26eec02ed",
+   "bytes": 1841772
   },
   "lit_battery:B07": {
    "path": "explorer/lit_battery-B07.json.gz",
-   "sha256": "ebd4c61495d818ccb0e5983514bccd59cc678d49692b7e7cac68cb8cacffd428",
-   "bytes": 203134
+   "sha256": "44fefdab062ae3ebb279c656b5f9400d50c5dab82658a0795e8ee930127a51bc",
+   "bytes": 203375
   },
   "lit_battery:B08": {
    "path": "explorer/lit_battery-B08.json.gz",
-   "sha256": "c9d8b621db3956bfe4e45dee5d8ee265e6bd7afefe1824e175e3cdc715935e42",
-   "bytes": 109681
+   "sha256": "cd099011ed77a2d4ec6a4d07535ae749f8148b3176a34cd6a75ec5995737bdf8",
+   "bytes": 109710
   },
   "lit_bulk:L01": {
    "path": "explorer/lit_bulk-L01.json.gz",
-   "sha256": "c96d45a510e29a6aec6dabbae222fe1f89651c22e279895666fc62f487db052f",
-   "bytes": 1050
+   "sha256": "51d5d2cb164dfaca6d20af577737c47d6c602847aac579cf87b3db9ce1af4a7f",
+   "bytes": 1066
   },
   "lit_bulk:L01_I_Si65_2x2x2_v20261115": {
    "path": "explorer/lit_bulk-L01_I_Si65_2x2x2_v20261115.json.gz",
-   "sha256": "c07503033e67b5b85c7c2c31085f90f92c07b9c42e1bcd6ef176f6285f82ba79",
-   "bytes": 7044
+   "sha256": "1aa1d02c209f27af8a6c10482fdfd0713e8ca0f5adee54bdbba8d8cd06b6b85c",
+   "bytes": 7071
   },
   "lit_bulk:L01_V_Si215_3x3x3_v20261115": {
    "path": "explorer/lit_bulk-L01_V_Si215_3x3x3_v20261115.json.gz",
-   "sha256": "267425304324617eb42ae2cf8150f98196181d5b7c53a33652f88f53896f2d94",
-   "bytes": 16287
+   "sha256": "ef4bb1cbf5a479d96794ea9338bc761368bdf96d8e72b5187f4ce176a85e1956",
+   "bytes": 16312
   },
   "lit_bulk:L02": {
    "path": "explorer/lit_bulk-L02.json.gz",
-   "sha256": "85e71d8007689a10c0b43c80184adca95086b3cfc6c3686d4a00cb772b1f159e",
-   "bytes": 7024
+   "sha256": "c338a03b5f362e6f84500969dd4a1b78398461b1c04739e799a6e23e292e8972",
+   "bytes": 7047
   },
   "lit_bulk:L03": {
    "path": "explorer/lit_bulk-L03.json.gz",
-   "sha256": "5bd8c0979b4cdfa7246e7e1172db9f34a1134775acabbf95d91bf242c4c2c19c",
-   "bytes": 19114
+   "sha256": "1d088703b93a84b733435cc2d31c3ed29ef0523064ae6d856cde6888bf56a40e",
+   "bytes": 19142
   },
   "lit_bulk:L04": {
    "path": "explorer/lit_bulk-L04.json.gz",
-   "sha256": "1893fe57fbb901cc7bd06178a6fd19bed81b0f7b0dca82e2f5c9ff4fa4e34d6c",
-   "bytes": 157157
+   "sha256": "34cd10c06254cee42ededebfa5a121ac10691e54068bacfc717f1086a2d96379",
+   "bytes": 157173
   },
   "lit_bulk:L05": {
    "path": "explorer/lit_bulk-L05.json.gz",
-   "sha256": "cb1a8b2ef577149830afb3e09635bc6f0e36c0aeeb5030cc1ddd6dbf06d115da",
-   "bytes": 18960
+   "sha256": "fd2bad82bc176122c02e3eca32238122ff06093ff3a52c9c3aa912d0497e5c70",
+   "bytes": 18988
   },
   "lit_bulk:L05_rutile_Ti32O63_2x2x4_v20261115": {
    "path": "explorer/lit_bulk-L05_rutile_Ti32O63_2x2x4_v20261115.json.gz",
-   "sha256": "e7ab0549e75116d544e4f5d4060c57b1a917f79285efe0a957b54336af1e54c7",
-   "bytes": 4068
+   "sha256": "2caa5ac2d7a825d658d3e04d3bfe47748a7f2af66cc9ef5f35ed6354aef05807",
+   "bytes": 4092
   },
   "lit_bulk:L06": {
    "path": "explorer/lit_bulk-L06.json.gz",
-   "sha256": "2d6749aa0fc993323e7a7168380967202335919402c9d8e54b4ee6d31798611c",
-   "bytes": 19435
+   "sha256": "3e9d152c0a5f495aac51ff42c946f83139c14527ca86a0de1ff08ab1c881c20d",
+   "bytes": 19461
   },
   "lit_bulk:L07": {
    "path": "explorer/lit_bulk-L07.json.gz",
-   "sha256": "048626b3d5eef3baf2ea19e3590cdfd101ae1dc946120abfde7dc4229dd1c94e",
-   "bytes": 13270
+   "sha256": "686b745f31d2feb2b88dbcfe19a4f9b43a0d4f7df53bd8693ee26b6e98ba4afa",
+   "bytes": 13326
   },
   "lit_bulk:O05": {
    "path": "explorer/lit_bulk-O05.json.gz",
-   "sha256": "3f7f7c750188540edf27e44be8003e44de3b35f61f671ca9b3928c4d797b63db",
-   "bytes": 659129
+   "sha256": "ab612df1d0547d0bb29a9b308a670d269d9d613f69d104d8d3f3299f80656b21",
+   "bytes": 659303
   },
   "lit_bulk:O05_reseed_v20261117": {
    "path": "explorer/lit_bulk-O05_reseed_v20261117.json.gz",
-   "sha256": "097a7f0c0f78b5e090a76710935a68eb24d9b536e6d5d51e32a7e74109ef7baf",
-   "bytes": 817426
+   "sha256": "58cc8a39a1a5403f0c7753e8b7b093efe70b64ec72498048a0fff59969bbbadd",
+   "bytes": 817700
   },
   "lit_metal_surfaces:C01": {
    "path": "explorer/lit_metal_surfaces-C01.json.gz",
-   "sha256": "8d98e4464017a201ad51077dd20415c504b8063b5dc79f3ee8a5b4b73aee0320",
-   "bytes": 13799
+   "sha256": "36050bc1b8f57b33f7ec8df14e2357a37304efc6b8b803222b0b651fe890d252",
+   "bytes": 13827
   },
   "lit_metal_surfaces:C02": {
    "path": "explorer/lit_metal_surfaces-C02.json.gz",
-   "sha256": "a96d832e8bdaa6cec2134e577cfc096280b16ad8aa7ac9f671129a70cabee1c6",
-   "bytes": 72199
+   "sha256": "501dfeaacfd7f9ce97f2ee5507e1c5af8636ecb81f868bc0528b89415feafb0b",
+   "bytes": 72231
   },
   "lit_metal_surfaces:C02_D3zero_paper_fcc_v20261116": {
    "path": "explorer/lit_metal_surfaces-C02_D3zero_paper_fcc_v20261116.json.gz",
-   "sha256": "f5474ba338581369451cbbc1519c5f67a631d791f96825139d497a4a9e8e678d",
-   "bytes": 178344
+   "sha256": "5f7c72805447fda32a4af1e53b55f3a5550255120a0c60b1c914476f72ebc6c9",
+   "bytes": 178442
   },
   "lit_metal_surfaces:C02fam_bare_Pt111_4H_2sqrt7_v20261118": {
    "path": "explorer/lit_metal_surfaces-C02fam_bare_Pt111_4H_2sqrt7_v20261118.json.gz",
-   "sha256": "ba8bbbea3f3648f4e9d0dc2a18031ae71f351ecc9c20e2c14f9c0fe514bc228a",
-   "bytes": 46320
+   "sha256": "24b506d62ad85014e5e5161af3aae6a435d3d18cf01e448fab0719e50eaf2f70",
+   "bytes": 46349
   },
   "lit_metal_surfaces:C02fam_close_divac_4of4H_4H_2sqrt7_v20261118": {
    "path": "explorer/lit_metal_surfaces-C02fam_close_divac_4of4H_4H_2sqrt7_v20261118.json.gz",
-   "sha256": "03edf13dc0822607aa86486634fa19accee475faefe95d1e88e583fb7f3c32db",
-   "bytes": 234497
+   "sha256": "f0511b5aa6a4fe7c95f31a3253c3a045c8f776f4185f58250279fde24cba7939",
+   "bytes": 234691
   },
   "lit_metal_surfaces:C02fam_far_divac_6of6H_4H_2sqrt7_v20261118": {
    "path": "explorer/lit_metal_surfaces-C02fam_far_divac_6of6H_4H_2sqrt7_v20261118.json.gz",
-   "sha256": "59e8022cd84cdc7e6573273a4c09b37595f1b67778b3e23a14251427870484ba",
-   "bytes": 594957
+   "sha256": "3db5f7891f1ba7ea3a8078e12e9d03e756f5aeb3c206c43836bde98e01ec29c6",
+   "bytes": 595352
   },
   "lit_metal_surfaces:C03": {
    "path": "explorer/lit_metal_surfaces-C03.json.gz",
-   "sha256": "83a3f927d7d005597a4299543da851252b90b4825c59d000a4d5cc8b4488249a",
-   "bytes": 22057
+   "sha256": "fba50729e820cef61a271acdb1972cf469109f96b021b3ecb347ce226ee4255f",
+   "bytes": 22108
   },
   "lit_metal_surfaces:C04": {
    "path": "explorer/lit_metal_surfaces-C04.json.gz",
-   "sha256": "6319ce402e731ba10c9ed1aa03e71f71824248fd9f579f6b5d44d5e8d5180dcb",
-   "bytes": 37899
+   "sha256": "e59eb06fef138306713bbeb8365900a0bbe61dcf0f2be4fd7be0de685b973774",
+   "bytes": 37930
   },
   "lit_metal_surfaces:C04_mono_m363_v20261115": {
    "path": "explorer/lit_metal_surfaces-C04_mono_m363_v20261115.json.gz",
-   "sha256": "e73d77672c17a2c3f58f9b788460d8743185ee70bfb2a2e5d8bcaae989867385",
-   "bytes": 166488
+   "sha256": "e904096f7a7281c8028faff720e94ff9e7ea5c1f09ef97b6034f43b95556c07f",
+   "bytes": 166780
   },
   "lit_metal_surfaces:C05": {
    "path": "explorer/lit_metal_surfaces-C05.json.gz",
-   "sha256": "035f1ab2a8ed3c270c5cfc676ed59f3ade931c89988aa2641029b7adf9ab618a",
-   "bytes": 12031
+   "sha256": "b1831f5fc595d2d7f891dc32fd2bb9595314cc087d71546b75bb8c9e76fd15aa",
+   "bytes": 12033
   },
   "lit_metal_surfaces:C05_bridge_CO_Ni211_148_v20261115": {
    "path": "explorer/lit_metal_surfaces-C05_bridge_CO_Ni211_148_v20261115.json.gz",
-   "sha256": "2973812823a4dd055b1f8baaf921cb3cbb6a86afb3d6a9b5780cad9fe853470c",
-   "bytes": 22046
+   "sha256": "d1e8a8b330550937e45cc5474dbc3de9dfeb874c38c37d7dfe048039f1cb3d54",
+   "bytes": 22054
   },
   "lit_metal_surfaces:C06": {
    "path": "explorer/lit_metal_surfaces-C06.json.gz",
-   "sha256": "235d6153bf2e519241792df7ed8a82de9c8db830cc8b0a0daa392372f4f41b63",
-   "bytes": 71020
+   "sha256": "6a64f769eef823f25aca0a2e2dcfbf6f8882c4241aad1ac631f268a5233e8911",
+   "bytes": 71111
   },
   "lit_metal_surfaces:C06_flat_N2_Ru0001_224_v20261115": {
    "path": "explorer/lit_metal_surfaces-C06_flat_N2_Ru0001_224_v20261115.json.gz",
-   "sha256": "6aa9829d1526749b9efd8ae68f7465b06f20258ceb55eb193ad5149523a5a19e",
-   "bytes": 111121
+   "sha256": "0e22d754662ef63fc22cb403c4fe878a91e940a0e4a90612c7c217ce1defcf8d",
+   "bytes": 111227
   },
   "lit_metal_surfaces:C07_CH3_H_Ni111_85_v20261115": {
    "path": "explorer/lit_metal_surfaces-C07_CH3_H_Ni111_85_v20261115.json.gz",
-   "sha256": "07e57f0d73e0479535ce79b95f70ea0e9540f1965a9d01ee3b641224b1d8ece0",
-   "bytes": 24493
+   "sha256": "92d90d89cd464b3cd16809f6e8c47746a4cc0c4cfe56b651862a1e6b9fde3525",
+   "bytes": 24502
   },
   "lit_metal_surfaces:C07_Ni111_author_FS": {
    "path": "explorer/lit_metal_surfaces-C07_Ni111_author_FS.json.gz",
-   "sha256": "98ff20c62e51468154883c55ba3a3cf5ff27d4a12881a0360f6d9c986ff36fa7",
-   "bytes": 17508
+   "sha256": "f0d103cb12f2e6167ed9279a525e272a5782293cc0c246958de87669dd6b1214",
+   "bytes": 17530
   },
   "lit_oxide_surfaces:O01": {
    "path": "explorer/lit_oxide_surfaces-O01.json.gz",
-   "sha256": "a87afdd08aeb82425fc69922bfe48bfeb3c10777450e66b159e8e1e66a1d0603",
-   "bytes": 9284
+   "sha256": "2aa11fff1b53055c5186cbe5c5a18653f828e70e09361fb8b169148749008e82",
+   "bytes": 9314
   },
   "lit_oxide_surfaces:O02": {
    "path": "explorer/lit_oxide_surfaces-O02.json.gz",
-   "sha256": "903185ac610145f273fea70ecb92a7b282405cec443339a8f2e30b4616d31e5d",
-   "bytes": 82553
+   "sha256": "0da0b53872a25c17158ede65d54118af2f9bdd832c57fc9519f1bb9446c1b4cb",
+   "bytes": 82578
   },
   "lit_oxide_surfaces:O03": {
    "path": "explorer/lit_oxide_surfaces-O03.json.gz",
-   "sha256": "55a6273458472d7a7ad0444fc05f030ce5b3e8da84389f0606a1d4eab96e67ab",
-   "bytes": 45851
+   "sha256": "7f83544ce06c1f368da2767e95e0cda873655d56f31a05e8f8ce75b9f46de2ea",
+   "bytes": 45878
   },
   "lit_oxide_surfaces:O03_H2O_at_vacancy_TiO2_290_v20261115": {
    "path": "explorer/lit_oxide_surfaces-O03_H2O_at_vacancy_TiO2_290_v20261115.json.gz",
-   "sha256": "a0f87f13c6e1966ff0d2ac0763005a28ed4ad6d8d01b755028a745b4cc74d25e",
-   "bytes": 87379
+   "sha256": "b220b55d69af61631593096ef7c6914e1235845cb2cbcc9abd14e2ebb1e016e5",
+   "bytes": 87410
   },
   "lit_oxide_surfaces:O04": {
    "path": "explorer/lit_oxide_surfaces-O04.json.gz",
-   "sha256": "0edfea96cbd3b3bf6725503b38987dc9e45dd56bda95e418a9976fcf6dc6e493",
-   "bytes": 7806
+   "sha256": "f7c4eceaf90cf79215c8e7bb33ec0245d3e4c504275c831a01209b8c57eed1fe",
+   "bytes": 7830
   },
   "lit_oxide_surfaces:O06": {
    "path": "explorer/lit_oxide_surfaces-O06.json.gz",
-   "sha256": "4f8e8572006939494a8a3b4cdc2312aaee5831e939f35b8626080f572022fa3d",
-   "bytes": 410564
+   "sha256": "a9e8cc5d6b2dc95ad2a1ef32c565a0add36944a0f25abecfcb8d6e4c19f09fd8",
+   "bytes": 258694
   },
   "lit_oxide_surfaces:O07": {
    "path": "explorer/lit_oxide_surfaces-O07.json.gz",
-   "sha256": "eeb56890a90d3f864f31f5ffce6499bbdd708109da285c24bb78ad8341fe8adc",
-   "bytes": 1097881
+   "sha256": "1d3f22b46a717400b6982b156632b73fb277ce99ec3b2a7b0183e9f6114eab99",
+   "bytes": 1098195
   },
   "lit_oxide_surfaces:O08": {
    "path": "explorer/lit_oxide_surfaces-O08.json.gz",
-   "sha256": "e289895d81ddb9d534e1be4f73ed64355d631106018a8c26cf48f01384430372",
-   "bytes": 90190
+   "sha256": "7782a44d5a699b55d426d45044152a7294a042a351b45f2f17939b3bd9a32fb8",
+   "bytes": 90272
   },
   "oc20:al_385": {
    "path": "explorer/oc20-al_385.json.gz",
-   "sha256": "b36718fb3c6fbb97a8473c24eceebabc6586a6934d892f9fe108912038e252cf",
-   "bytes": 4730592
+   "sha256": "30891a05107b5e557869267cd8e155ee14e55a7d0ba5eb110ef08455359d31c4",
+   "bytes": 4731001
   },
   "oc20:pt_343": {
    "path": "explorer/oc20-pt_343.json.gz",
-   "sha256": "27e0cd80e52cb6d3f68388182262f16d20462ce9479aae258dc41e61f3d41f94",
-   "bytes": 298308
+   "sha256": "4cef17d9f38cadd5484742ed5c334a501d616ce74285bbc10d121fa8235d816f",
+   "bytes": 298384
   }
  }
 }

@@ -120,6 +120,13 @@ SM.Viewer = class Viewer {
     return [element[0] * 0.72 + palette.neutral[0] * 0.28, element[1] * 0.72 + palette.neutral[1] * 0.28, element[2] * 0.72 + palette.neutral[2] * 0.28];
   }
 
+  /* Smallest odd supercell that fills a sphere of the given radius around the movers on the repeated axes. */
+  previewSupercell(radius) {
+    const axes = this.repeatAxes();
+    const short = this.lattice.cell.filter((v, k) => axes[k]).map((v) => Math.hypot(v[0], v[1], v[2]));
+    return short.length && Math.min(...short) < 2 * radius ? 3 : 1;
+  }
+
   /* Bonds between drawn atoms (all images): distance under 1.15 × the sum of covalent radii, found with a grid.
      Returns a flat array [x1,y1,z1,x2,y2,z2,...]. */
   bonds() {
@@ -334,7 +341,7 @@ SM.Viewer = class Viewer {
     this.renderer.draw(ctx, width, height, ratio, { data: this.buffer, count, rotation: R, pivot, scale, panX: s.panX, panY: s.panY, fog: palette.fog, ring: palette.accent,
       bonds, bondColour: getComputedStyle(this.canvas).getPropertyValue("--muted").trim() });
     this.view = { R, pivot, scale, width, height };
-    if (!s.focus) this.drawCell(ctx);
+    if (!s.focus && this.options.overlays !== false) this.drawCell(ctx);
     if (this.options.overlays !== false) {
       this.drawVectors(ctx);
       if (this.options.overlay) this.options.overlay(ctx, this);
@@ -407,7 +414,7 @@ SM.Viewer = class Viewer {
       const colour = style.getPropertyValue(spec.token).trim();
       const gain = spec.unit ? 2.2 : 1;
       this.drawn.forEach((d) => {
-        if (!d.primary || this.store.fixed[d.atom]) return;
+        if (this.store.fixed[d.atom]) return;   /* every supercell image, not only the home cell */
         const i = d.atom * 3;
         const v = [field[i] * gain, field[i + 1] * gain, field[i + 2] * gain];
         if (Math.hypot(v[0], v[1], v[2]) < (spec.unit ? 0.3 : s.vectorMin)) return;

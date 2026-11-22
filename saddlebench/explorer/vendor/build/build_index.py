@@ -28,8 +28,18 @@ GLOSSARY = ("Saddle: a distinct saddle geometry (0.2 Å group) with a complete D
             "Class: SaddleMotif's grouping of saddles by motion.")
 
 
-def slug(parent: str) -> str:
-    return re.sub(r"[^A-Za-z0-9_.]+", "-", parent).strip("-")
+def slug(parent: str, seed: str | None = None) -> str:
+    base = re.sub(r"[^A-Za-z0-9_.]+", "-", parent).strip("-")
+    return f"{base}-seed-{seed[4:10]}" if seed else base
+
+
+def seed_label(structure: dict) -> str:
+    """'' for single-seed pages, else ' · seed 2 (23370d)'."""
+    seed = structure.get("seedPage")
+    if not seed:
+        return ""
+    order = structure.get("allSeeds") or [seed]
+    return f" · seed {order.index(seed) + 1} ({seed[4:10]})"
 
 
 def short_name(parent: str) -> str:
@@ -95,8 +105,9 @@ def summary(d: dict, confidence: dict, lit: dict | None, score: dict | None) -> 
     for n in s["numbers"]:
         counts[n] = counts.get(n, 0) + 1
     row = {
-        "parent": parent, "slug": slug(parent), "dataset": parent.split(":", 1)[0], "name": parent.split(":", 1)[-1],
-        "short": (lit or {}).get("short") or short_name(parent), "atoms": len(s["numbers"]),
+        "parent": parent, "slug": slug(parent, s.get("seedPage")), "dataset": parent.split(":", 1)[0],
+        "name": parent.split(":", 1)[-1] + seed_label(s),
+        "short": ((lit or {}).get("short") or short_name(parent)) + seed_label(s), "atoms": len(s["numbers"]),
         "free": len(s["numbers"]) - len(s["fixed"]),
         "classes": sum(c["id"] != "Unclassified" for c in classes), "reactions": len(reactions),
         "saddles": len({r["saddle"] for r in reactions}), "seedReactions": len(seed_pairs),
@@ -201,7 +212,7 @@ def build_site(items, out: Path, *, mode: str = "motif", lits: dict | None = Non
         lit, score = lits.get(parent), scores.get(parent)
         row = summary(d, confidence, lit, score)
         rows.append(row)
-        config = {"lit": lit, "title": (lit or {}).get("title") or parent}
+        config = {"lit": lit, "title": ((lit or {}).get("title") or parent) + seed_label(d["structure"])}
         if score:
             config["score"] = score
         if links and links.get("scoreboard"):

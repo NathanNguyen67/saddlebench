@@ -320,7 +320,8 @@ SM.frameDiff = (store, a, fa, b, fb) => {
     per[i] = Math.hypot(v[0], v[1], v[2]); if (per[i] > max) max = per[i];
   }
   const top = [...per.keys()].sort((x, y) => per[y] - per[x]).slice(0, 6).map((i) => [i, per[i]]);
-  const out = { per, max, top };
+  let sq = 0; for (let i = 0; i < n; i += 1) sq += per[i] * per[i];
+  const out = { per, max, top, norm: Math.sqrt(sq) };
   if (store._diffs.size > 200) store._diffs.delete(store._diffs.keys().next().value);
   store._diffs.set(key, out);
   return out;
@@ -355,7 +356,7 @@ SM.endpointSets = (store, saddleA, saddleB) => {
 
 /* Data-quality flags for one structure, computed in the page from the payload. Thresholds are display choices. */
 SM.FLAG_RULES = {
-  at_endpoint: { title: "Saddle at or below an endpoint", why: "Barrier or reverse barrier under 0.01 eV. A first-order saddle should lie above both minima it connects; this usually means an unconverged endpoint or a flat region." },
+  at_endpoint: { title: "Saddle at or below an endpoint", why: "Barrier or reverse barrier under 0.01 eV. A first-order saddle should lie above both minima it connects; this usually means an unconverged endpoint or a flat region. maxdev and norm (all atoms, drift removed as in SaddleBench) are between the saddle and that low-barrier endpoint: near zero means the saddle sits on the endpoint." },
   near_null: { title: "Near-null reaction", why: "Reactant and product differ by less than 0.30 Å (maxdev, drift removed). Just past the 0.2 Å identity cutoff; possibly the same minimum." },
   below_seed: { title: "Lower minimum right next to the seed", why: "A seed reaction whose product is under 0.30 Å from the seed but more than 0.05 eV below it. The seed may not be the bottom of its basin." },
   seed_energy: { title: "Seed energy mismatch", why: "DoubleMin endpoints matched to the seed differ from its stored energy by more than 0.02 eV (spread shown). Tight seed convergence or precision differences." },
@@ -368,7 +369,12 @@ SM.computeFlags = (store) => {
   const seeds = store.seeds;
   const out = Object.fromEntries(Object.keys(SM.FLAG_RULES).map((k) => [k, []]));
   store.reactions.forEach((r) => {
-    if (r.barrier < 0.01 || r.reverseBarrier < 0.01) out.at_endpoint.push({ reactions: [r.id], text: `barrier ${SM.fmt.ev(r.barrier)} / reverse ${SM.fmt.ev(r.reverseBarrier)} eV`, sort: Math.min(r.barrier, r.reverseBarrier) });
+    if (r.barrier < 0.01 || r.reverseBarrier < 0.01) {
+      const side = r.barrier <= r.reverseBarrier ? 0 : 2;
+      const near = SM.frameDiff(store, r.id, 1, r.id, side);
+      out.at_endpoint.push({ reactions: [r.id], sort: Math.min(r.barrier, r.reverseBarrier),
+        text: `barrier ${SM.fmt.ev(r.barrier)} / reverse ${SM.fmt.ev(r.reverseBarrier)} eV; saddle ↔ ${side ? "product" : "reactant"}: maxdev ${near.max.toFixed(3)} Å, norm ${near.norm.toFixed(3)} Å` });
+    }
     const d = SM.frameDiff(store, r.id, 0, r.id, 2).max;
     if (d < 0.3) out.near_null.push({ reactions: [r.id], text: `reactant ↔ product ${d.toFixed(2)} Å, ΔE ${SM.fmt.signed(r.reactionEnergy)} eV`, sort: d });
     if (seeds.has(r.reactant) && d < 0.3 && r.eP < -0.05) out.below_seed.push({ reactions: [r.id], text: `product ${store.label(r.product)} ${d.toFixed(2)} Å from the seed, ${SM.fmt.signed(r.eP)} eV`, sort: r.eP });
