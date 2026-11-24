@@ -117,11 +117,24 @@ SM.Inspector = class Inspector {
         this.row("Saddle to product", `${vector(2, 1).toFixed(3)} Å`),
         this.row("Reactant to product", `${vector(2, 0).toFixed(3)} Å`),
         this.row("Mode amplitude", amplitude === null ? "–" : amplitude.toFixed(3))),
+      this.primaryList(atom),
       h("p", { class: "label" }, "Nearest neighbours"),
       h("div", { class: "neighbours" }, this.neighbours(atom).map(([distance, other]) => h("button", { type: "button", onclick: () => this.selectAtom(other) }, h("b", {}, String(other)), ` ${distance.toFixed(2)} Å`))),
       h("div", { class: "actions" },
         h("button", { type: "button", onclick: () => this.actions.togglePin(atom) }, pinned ? "Unpin" : "Pin"),
         h("button", { type: "button", onclick: () => this.actions.focusAtom(atom) }, s.focusAtom === atom ? "Centre on movers" : "Centre here")));
+  }
+
+  /* Reactions of the open class whose primary atom (largest reactant → saddle move) is this atom. */
+  primaryList(atom) {
+    const { h, fmt } = SM;
+    const cls = this.actions.currentClass && this.actions.currentClass();
+    if (!cls) return null;
+    const rows = cls.reactions.filter((r) => this.store.primaryAtom(r) === atom).map((r) => this.store.reactions[r]).sort((a, b) => a.barrier - b.barrier);
+    return h("div", {},
+      h("p", { class: "label" }, `${cls.id} reactions with this atom as primary mover: ${rows.length}`),
+      rows.length ? h("div", { class: "neighbours" }, rows.slice(0, 40).map((r) => h("button", { type: "button", title: `${r.saddle.slice(4, 10)} → ${this.store.label(r.product)}`,
+        onclick: () => this.actions.selectReaction(r.id) }, h("b", {}, `${fmt.ev(r.barrier)} eV`), ` ${r.saddle.slice(4, 10)}${r.id === this.reaction ? " (shown)" : ""}`))) : null);
   }
 
   pinnedPanel() {

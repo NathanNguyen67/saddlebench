@@ -197,10 +197,23 @@ def index_page(rows: list, *, mode: str, title: str, lede: str, methods: list, n
             f'{head}</head>\n<body>\n{body}\n</body>\n</html>\n')
 
 
+_DEBUG_SCRIPTS = []
+
+
+def debug_scripts():
+    if not _DEBUG_SCRIPTS:
+        _DEBUG_SCRIPTS.append(build_html.scripts(build_html.DEBUG_SCRIPTS))
+    return _DEBUG_SCRIPTS[0]
+
+
 def build_site(items, out: Path, *, mode: str = "motif", lits: dict | None = None, scores: dict | None = None,
                methods: list | None = None, confidence: dict | None = None, title: str | None = None,
-               lede: str = "", note: str = "", links: dict | None = None, fragment: bool = False) -> list:
-    """items: iterable of (gzipped payload bytes). Writes <slug>.html per structure and index.html; returns rows."""
+               lede: str = "", note: str = "", links: dict | None = None, fragment: bool = False,
+               debug_dir: Path | None = None) -> list:
+    """items: iterable of (gzipped payload bytes). Writes <slug>.html per structure and index.html; returns rows.
+
+    debug_dir: debug_structure.py payloads (<parent with ~>[~seed-xxxxxx].debug.json.gz); a structure that has one also
+    gets <slug>.debug.html, linked both ways."""
     lits, scores, confidence = lits or {}, scores or {}, confidence or {}
     out.mkdir(parents=True, exist_ok=True)
     web_scripts = build_html.scripts()
@@ -217,6 +230,17 @@ def build_site(items, out: Path, *, mode: str = "motif", lits: dict | None = Non
             config["score"] = score
         if links and links.get("scoreboard"):
             config["links"] = {"scoreboard": links["scoreboard"]}
+        debug = None
+        if debug_dir:
+            stem = re.sub(r"[^A-Za-z0-9_.-]", "~", parent)
+            seed = d["structure"].get("seedPage")
+            debug = Path(debug_dir) / f"{stem}{f'~seed-{seed[4:10]}' if seed else ''}.debug.json.gz"
+            if debug.exists():
+                config["links"] = dict(config.get("links") or {}) | {"debug": f"{row['slug']}.debug.html"}
+                page = build_html.render_bytes(debug.read_bytes(), "index.html", f"Debug · {row['short']}", mode,
+                                               {"title": config["title"], "links": {"explorer": f"{row['slug']}.html"}},
+                                               web_scripts=debug_scripts(), styles=styles, template="debug_template.html")
+                (out / f"{row['slug']}.debug.html").write_text(page, encoding="utf-8")
         page = build_html.render_bytes(raw, "index.html", f"{build_html.BRANDS[mode].split()[0]} · {row['short']}", mode,
                                        config, web_scripts=web_scripts, styles=styles)
         (out / f"{row['slug']}.html").write_text(page, encoding="utf-8")

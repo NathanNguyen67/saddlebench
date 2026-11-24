@@ -36,10 +36,11 @@ window.SM = window.SM || {};
       if (!card.viewer && card.row.mini) {
         const store = new SM.Store(card.row.mini);
         store.lattice = new SM.geo.Lattice(store.cell, store.pbc);
-        /* Whole cells (supercell when the cell is small), framed on the movers: bulk previews look like crystals, not clusters. */
-        const settings = new SM.ViewSettings({ radius: card.row.radius || 9, yaw: 0.55, pitch: -0.95, fade: 0.35, focus: false });
-        card.viewer = new SM.Viewer(card.canvas, store, renderer, settings, { interactive: false, overlays: false });
-        settings.supercell = card.viewer.previewSupercell(settings.radius);
+        /* Focus box shaped like the cell, centred on the movers and framed to fill the card: neither a cut-out cluster
+           nor an endless supercell. */
+        const settings = new SM.ViewSettings({ radius: card.row.radius || 9, yaw: 0.55, pitch: -0.95, fade: 0.35, focus: false, fixedMarks: false });
+        card.viewer = new SM.Viewer(card.canvas, store, renderer, settings, { interactive: false, overlays: false, frameBox: true });
+        settings.box = card.viewer.boxFor(settings.radius);
         card.viewer.setReaction(0);
       }
       visible.add(card);

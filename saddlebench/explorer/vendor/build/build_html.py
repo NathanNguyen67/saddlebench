@@ -16,13 +16,14 @@ from pathlib import Path
 
 WEB = Path(__file__).resolve().parents[1] / "web"
 SCRIPTS = ["geometry.js", "store.js", "renderer.js", "viewer.js", "ui.js", "inspector.js", "gallery.js", "workspace.js", "app.js"]
+DEBUG_SCRIPTS = ["geometry.js", "store.js", "renderer.js", "viewer.js", "ui.js", "debugfacts.js", "guessview.js", "debug.js"]  # debug page (debug_structure.py payloads)
 TITLE = "<title>SaddleMotif Explorer</title>"
 BRANDS = {"motif": "SaddleMotif Explorer", "bench": "SaddleBench Explorer"}
 CONFIG_KEYS = {"mode", "brand", "title", "lit", "score", "links"}
 
 
-def scripts() -> str:
-    text = "\n".join((WEB / name).read_text(encoding="utf-8") for name in SCRIPTS)
+def scripts(names=SCRIPTS) -> str:
+    text = "\n".join((WEB / name).read_text(encoding="utf-8") for name in names)
     if "</script" in text:
         raise SystemExit("a script contains a closing script tag")
     return text
@@ -33,7 +34,8 @@ def json_for_script(value) -> str:
 
 
 def render_bytes(payload: bytes, index_href: str | None = None, title: str | None = None, mode: str = "motif",
-                 config: dict | None = None, *, web_scripts: str | None = None, styles: str | None = None) -> str:
+                 config: dict | None = None, *, web_scripts: str | None = None, styles: str | None = None,
+                 template: str = "template.html") -> str:
     """payload is the gzipped JSON payload. web_scripts/styles let callers reuse one read for many pages."""
     config = dict(config or {})
     unknown = set(config) - CONFIG_KEYS
@@ -45,7 +47,7 @@ def render_bytes(payload: bytes, index_href: str | None = None, title: str | Non
     if index_href:
         links["index"] = index_href
     config["links"] = links
-    page = (WEB / "template.html").read_text(encoding="utf-8")
+    page = (WEB / template).read_text(encoding="utf-8")
     for marker, value in (
         ("/*__STYLES__*/", styles if styles is not None else (WEB / "styles.css").read_text(encoding="utf-8")),
         ("/*__SCRIPTS__*/", web_scripts if web_scripts is not None else scripts()),
@@ -73,9 +75,17 @@ def main():
     ap.add_argument("--title")
     ap.add_argument("--mode", choices=sorted(BRANDS), default="motif")
     ap.add_argument("--config", type=Path)
+    ap.add_argument("--debug", action="store_true", help="payload is from debug_structure.py: build the debug page")
+    ap.add_argument("--explorer", help="debug page: link back to this explorer page (e.g. oc20-pt_343.html)")
     a = ap.parse_args()
     config = json.loads(a.config.read_text()) if a.config else None
-    page = render(a.payload, a.index, a.title, a.mode, config)
+    if a.debug:
+        config = dict(config or {})
+        config["links"] = dict(config.get("links") or {}) | ({"explorer": a.explorer} if a.explorer else {})
+        page = render_bytes(a.payload.read_bytes(), a.index, a.title or "SaddleMotif debug", a.mode, config,
+                            web_scripts=scripts(DEBUG_SCRIPTS), template="debug_template.html")
+    else:
+        page = render(a.payload, a.index, a.title, a.mode, config)
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(page, encoding="utf-8")
     print("WROTE", a.out, a.out.stat().st_size, "bytes")

@@ -6,7 +6,7 @@ SM.FAN_COLOURS = ["--p1", "--p2", "--p3", "--p4", "--p5", "--p6", "--p7", "--p8"
 SM.Workspace = class Workspace {
   constructor(root, store, renderer, callbacks) {
     Object.assign(this, { root, store, renderer, callbacks });
-    this.settings = new SM.ViewSettings({ radius: 11, focus: false, fade: 0, keepView: true });
+    this.settings = new SM.ViewSettings({ radius: 11, focus: false, box: 1, fade: 0, keepView: true, anchor: "cell" });
     /* #...&cmp=12,40 (shareable links, the flags page) is applied by the router via setCompare. */
     this.refFilter = "all";
     if (store.score) store.score.listeners.add(() => { if (this.cls) { this.renderSide(); this.inspector.render(); } });
@@ -50,9 +50,11 @@ SM.Workspace = class Workspace {
     const fadeValue = value(`${Math.round(s.fade * 100)}%`);
     const sizeValue = value("1.00×");
     this.sizeValue = sizeValue;
-    const bulk = this.viewer.repeatAxes()[2];
-    this.supercell = h("select", { "aria-label": "Supercell", onchange: (e) => { s.supercell = Number(e.target.value); s.redraw(); } },
-      [1, 2, 3].map((n) => h("option", { value: n }, bulk ? `${n}×${n}×${n}` : `${n}×${n}`)));
+    /* Focus box: shaped like the cell, box × the cell on each repeated axis, centred on the movers (1 = one cell,
+       3 = a 3×3(×3) supercell; under 1 crops to the reaction). */
+    this.boxValue = value("");
+    this.boxSlider = h("input", { type: "range", min: 0.3, max: 3, step: 0.1, value: s.box, "aria-label": "Focus box size in cells",
+      oninput: (e) => this.setBox(Number(e.target.value)) });
     this.pinCount = h("output", {});
     this.pinInput = h("input", { type: "text", class: "pin-input", placeholder: "e.g. 12, 40-45", "aria-label": "Pin atoms by index", spellcheck: false,
       onkeydown: (e) => { if (e.key === "Enter") this.pinFromText(e.target.value); } });
@@ -63,7 +65,7 @@ SM.Workspace = class Workspace {
     this.inspectorRoot = h("aside", { class: "inspector panel" });
     this.inspector = new SM.Inspector(this.inspectorRoot, this.store, s, {
       focusAtom: (atom) => this.focusAtom(atom), currentClass: () => this.cls,
-      togglePin: (atom) => this.togglePin(atom), clearPins: () => this.clearPins(),
+      togglePin: (atom) => this.togglePin(atom), clearPins: () => this.clearPins(), selectReaction: (id) => this.select(id),
     });
 
     const tool = (label, ...children) => h("div", { class: "tool" }, h("span", { class: "tool-label" }, label), h("div", { class: "tool-body" }, children));
@@ -80,10 +82,13 @@ SM.Workspace = class Workspace {
             h("div", { class: "dock" }, this.play, h("div", { class: "slider-wrap" }, this.slider,
               h("div", { class: "ticks" }, h("span", {}, "Reactant"), h("span", {}, "Saddle"), h("span", {}, "Product"))), this.position),
             svg,
-            h("p", { class: "note" }, "Stored reactant, saddle and product frames joined by straight lines; the path between them is schematic. Drag rotates, Alt/Ctrl-drag or Q/E spins in the screen plane, Shift-drag pans, B toggles bonds, click atoms to pin them."),
+            h("p", { class: "note" }, "Stored reactant, saddle and product frames joined by straight lines; the path between them is schematic. Drag rotates, Alt/Ctrl-drag or Q/E spins in the screen plane, Shift-drag pans, B toggles bonds, click atoms to pin them (two pinned: distance at the bottom; three: angle). Crosses mark fixed atoms."),
             h("div", { class: "tools" },
               tool("View",
-                h("label", { class: "field-inline" }, "Supercell", this.supercell),
+                h("label", { class: "field-inline", title: "Cell: the view stays on the cell centre for every reaction (widen Box and zoom to look across an edge). Reaction: centre on this reaction's moving atoms." }, "Centre",
+                  h("select", { onchange: (e) => { s.anchor = e.target.value; this.viewer.centre = null; s.redraw(); } },
+                    h("option", { value: "cell", selected: s.anchor === "cell" }, "Cell"), h("option", { value: "movers", selected: s.anchor !== "cell" }, "Reaction"))),
+                h("label", { class: "field-inline", title: "Box shaped like the cell around the centre. 1 = one cell, 3 = 3×3 supercell, under 1 crops." }, "Box", this.boxSlider, this.boxValue),
                 h("label", { class: "field-inline" }, "Fade others",
                   h("input", { type: "range", min: 0, max: 0.92, step: 0.02, value: s.fade, "aria-label": "Fade atoms that are not moving, pinned or selected", oninput: (e) => { s.fade = Number(e.target.value); fadeValue.textContent = `${Math.round(s.fade * 100)}%`; s.redraw(); } }), fadeValue),
                 h("label", { class: "field-inline" }, "Atom size",
@@ -106,6 +111,7 @@ SM.Workspace = class Workspace {
         this.inspectorRoot),
     );
     this.setTabState();
+    this.setBox(s.box);
     document.addEventListener("keydown", (e) => this.onKey(e));
     window.addEventListener("resize", () => s.redraw());
   }
@@ -177,6 +183,16 @@ SM.Workspace = class Workspace {
           h("button", { type: "button", class: "chip-x", "aria-label": "Stop comparing", onclick: () => { map.delete(id); changed(); } }, "×"));
       })),
       h("button", { type: "button", onclick: () => { map.clear(); changed(); } }, "Clear"));
+  }
+
+  setBox(x) {
+    const s = this.settings;
+    s.box = Math.max(0.3, Math.min(3, x));
+    if (this.boxSlider) this.boxSlider.value = s.box;
+    const axes = this.viewer.repeatAxes();
+    const edges = this.viewer.lattice.cell.filter((v, k) => axes[k]).map((v) => (s.box * Math.hypot(v[0], v[1], v[2])).toFixed(0));
+    if (this.boxValue) this.boxValue.textContent = `${s.box.toFixed(1)}× cell${edges.length ? ` (${edges.join(" × ")} Å)` : ""}`;
+    s.redraw();
   }
 
   setAtomScale(x) {

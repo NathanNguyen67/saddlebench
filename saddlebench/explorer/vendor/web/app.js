@@ -32,6 +32,10 @@ window.SM = window.SM || {};
       back.hidden = false;
     }
 
+    if (config.links.debug) {
+      document.querySelector(".brand").append(" ", h("a", { href: config.links.debug, title: "Every saddle (with or without a DoubleMin) and every SaddleMotif guess, by primary atom and site" }, "Debug view →"));
+    }
+
     const galleryRoot = document.getElementById("gallery");
     const workspaceRoot = document.getElementById("workspace");
     let workspace = null;
@@ -79,6 +83,7 @@ window.SM = window.SM || {};
         workspaceRoot.hidden = false;
         if (q.get("bonds") === "1") { workspace.settings.bonds = true; if (workspace.bondBox) workspace.bondBox.checked = true; }
         if (q.get("size") && Number(q.get("size")) > 0) workspace.setAtomScale(Number(q.get("size")));
+        if (q.get("box") && Number(q.get("box")) > 0) workspace.setBox(Number(q.get("box")));
         workspace.open(cls, Number(q.get("r")));
         if (q.has("cmp")) {
           /* Consume cmp=ids once (from a flag or a shared link), so returning to this class does not reapply it. */

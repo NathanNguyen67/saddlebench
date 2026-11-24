@@ -32,7 +32,10 @@ SM.Renderer = class Renderer {
         float shine = pow(max(dot(n, normalize(vec3(-0.18, 0.3, 1.0))), 0.0), 42.0);
         vec3 c = tint * (0.46 + 0.6 * diffuse) + vec3(0.2) * shine;
         c *= 1.0 - 0.32 * smoothstep(0.8, 1.0, sqrt(d));
-        if (ring > 0.5) c = mix(c, ringColour, smoothstep(0.66, 0.74, sqrt(d)));
+        /* rim: +1 mover ring, +2 fixed atom (an ASE-style cross drawn on the sphere, so it is hidden exactly as much
+           as the atom is). */
+        if (mod(ring, 2.0) > 0.5) c = mix(c, ringColour, smoothstep(0.66, 0.74, sqrt(d)));
+        if (ring > 1.5 && d < 0.55 && min(abs(uv.x - uv.y), abs(uv.x + uv.y)) < 0.13) c = mix(c, vec3(0.1), 0.7);
         float f = clamp((fogRange.y - (z + nz * r)) / max(fogRange.y - fogRange.x, 0.001), 0.0, 1.0);
         pixel = vec4(mix(c, fog, 0.62 * f) * a, a);
         gl_FragDepth = 0.5 - (z + nz * r) / depth * 0.5;

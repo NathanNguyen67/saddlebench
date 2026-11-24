@@ -15,13 +15,17 @@ SM.ViewSettings = class ViewSettings {
   constructor(overrides = {}) {
     Object.assign(this, {
       t: 0, yaw: 0.5, pitch: -1.0, zoom: 1, panX: 0, panY: 0,
-      /* focus clips to a sphere around the movers (gallery cards); the main view draws whole cells instead. */
-      focus: true, radius: 12, focusAtom: null, supercell: 1, fade: 0,
+      /* focus clips to a sphere around the movers (legacy); box > 0 clips to a box shaped like the cell, box × the cell
+         on each repeated axis, centred on the movers (main view and cards); box 0 draws whole supercells. */
+      focus: true, radius: 12, focusAtom: null, supercell: 1, box: 0, fade: 0,
       threshold: 0.2, colour: "highlight", vectors: new Set(), vectorScale: 1, vectorMin: 0.2,
       pinned: new Set(), labels: true, selected: null,
       /* atomScale multiplies drawn radii; keepView keeps the camera pivot and image wrapping when the reaction
          changes; compare maps reaction id -> colour slot, and those reactions' movers are drawn in that colour. */
       atomScale: 1, keepView: false, compare: new Map(), roll: 0, bonds: false,
+      /* orient: view rotation rows (screen x, y, depth in world coordinates). Built from yaw/pitch/roll, then every
+         drag turns it about the current screen axes, so a spin never changes what a later drag does. */
+      orient: null,
     }, overrides);
     this.viewers = new Set();
   }
@@ -29,7 +33,7 @@ SM.ViewSettings = class ViewSettings {
   redraw() { this.viewers.forEach((viewer) => viewer.draw()); }
 
   resetCamera() {
-    Object.assign(this, { yaw: 0.5, pitch: -1.0, roll: 0, zoom: 1, panX: 0, panY: 0 });
+    Object.assign(this, { yaw: 0.5, pitch: -1.0, roll: 0, orient: null, zoom: 1, panX: 0, panY: 0 });
     this.viewers.forEach((viewer) => { viewer.centre = null; });
     this.redraw();
   }
@@ -37,18 +41,34 @@ SM.ViewSettings = class ViewSettings {
   camera(name) {
     const presets = { top: [0, 0], side: [0, -Math.PI / 2], bottom: [0, Math.PI], iso: [0.5, -1.0] };
     [this.yaw, this.pitch] = presets[name];
-    this.roll = 0;
+    this.roll = 0; this.orient = null;
     this.redraw();
+  }
+
+  /* Turn the view about a screen axis (0 horizontal, 1 vertical, 2 the screen normal). */
+  turn(axis, angle) {
+    const R = SM.viewRotation(this);
+    const [i, j] = [[1, 2], [2, 0], [0, 1]][axis];
+    const c = Math.cos(angle); const n = Math.sin(angle);
+    const ri = R[i]; const rj = R[j];
+    R[i] = ri.map((v, k) => c * v - n * rj[k]);
+    R[j] = ri.map((v, k) => n * v + c * rj[k]);
+    /* Re-orthonormalise so many small turns do not drift. */
+    const unit = (v) => { const m = Math.hypot(v[0], v[1], v[2]) || 1; return v.map((x) => x / m); };
+    const x = unit(R[0]); const d = x[0] * R[1][0] + x[1] * R[1][1] + x[2] * R[1][2];
+    const y = unit(R[1].map((v, k) => v - d * x[k]));
+    this.orient = [x, y, [x[1] * y[2] - x[2] * y[1], x[2] * y[0] - x[0] * y[2], x[0] * y[1] - x[1] * y[0]]];
   }
 };
 
 /* View rotation rows: yaw/pitch (trackball), then roll spins the picture in the screen plane. */
 SM.viewRotation = (s) => {
+  if (s.orient) return s.orient;
   const R = SM.geo.rotation(s.yaw, s.pitch);
-  if (!s.roll) return R;
-  const c = Math.cos(s.roll); const n = Math.sin(s.roll);
-  return [[c * R[0][0] - n * R[1][0], c * R[0][1] - n * R[1][1], c * R[0][2] - n * R[1][2]],
-    [n * R[0][0] + c * R[1][0], n * R[0][1] + c * R[1][1], n * R[0][2] + c * R[1][2]], R[2]];
+  const c = Math.cos(s.roll || 0); const n = Math.sin(s.roll || 0);
+  s.orient = [[c * R[0][0] - n * R[1][0], c * R[0][1] - n * R[1][1], c * R[0][2] - n * R[1][2]],
+    [n * R[0][0] + c * R[1][0], n * R[0][1] + c * R[1][1], n * R[0][2] + c * R[1][2]], R[2].slice()];
+  return s.orient;
 };
 
 SM.Viewer = class Viewer {
@@ -85,7 +105,24 @@ SM.Viewer = class Viewer {
   focusCentre(positions) {
     const s = this.settings;
     if (s.focusAtom !== null) return [positions[s.focusAtom * 3], positions[s.focusAtom * 3 + 1], positions[s.focusAtom * 3 + 2]];
-    if (!this.centre) {
+    /* anchor "cell": the cell's own centre (slab: middle of the atoms in z), the same for every reaction, so the
+       drawn cell never shifts; anchor "movers" (cards, and the Reaction option) centres on this reaction. */
+    if (s.anchor === "cell") {
+      if (!this.cellCentre) {
+        const c = this.lattice.cell; const axes = this.repeatAxes();
+        const centre = [0, 1, 2].map((k) => 0.5 * (c[0][k] + c[1][k]) + (axes[2] ? 0.5 * c[2][k] : 0));
+        if (!axes[2]) {
+          let low = Infinity; let high = -Infinity;
+          for (let i = 0; i < this.store.n; i += 1) { low = Math.min(low, this.store.base[i * 3 + 2]); high = Math.max(high, this.store.base[i * 3 + 2]); }
+          centre[2] = 0.5 * (low + high);
+        }
+        this.cellCentre = centre;
+      }
+      return this.cellCentre;
+    }
+    /* Reaction centre: recomputed for each reaction (keepView keeps zoom and rotation, not a stale centre). */
+    if (!this.centre || this.centreReaction !== this.reaction) {
+      this.centreReaction = this.reaction;
       const saddle = this.store.frame(this.reaction, 1);
       let movers = this.store.movers(this.reaction, this.store.thresholds.moved_A);
       if (!movers.length) movers = this.store.movers(this.reaction, 0.05);
@@ -104,6 +141,14 @@ SM.Viewer = class Viewer {
       return index < 0 ? palette.neutral : SM.GROUP_COLOURS[index % SM.GROUP_COLOURS.length];
     }
     if (s.colour === "element") return element;
+    /* "site": categorical colour per site type (debug page, s.atomSites). */
+    if (s.colour === "site" && s.atomSites) return SM.GROUP_COLOURS[s.atomSites[atom] % SM.GROUP_COLOURS.length];
+    /* "values": per-atom numbers set by the page (debug site map); zero stays neutral, the rest ramp to the maximum. */
+    if (s.colour === "values" && s.atomValues) {
+      const v = s.atomValues[atom];
+      if (!(v > 0)) return this.store.fixed[atom] ? palette.fixed : palette.neutral;
+      return SM.geo.ramp(0.15 + 0.85 * Math.min(1, v / Math.max(s.atomValuesMax || 1, 1e-9)));
+    }
     if (s.colour === "diff") {
       const other = [...s.compare.keys()].find((id) => this.store.reactions[id].saddle !== this.store.reactions[this.reaction].saddle);
       if (other === undefined) return element;
@@ -120,11 +165,59 @@ SM.Viewer = class Viewer {
     return [element[0] * 0.72 + palette.neutral[0] * 0.28, element[1] * 0.72 + palette.neutral[1] * 0.28, element[2] * 0.72 + palette.neutral[2] * 0.28];
   }
 
-  /* Smallest odd supercell that fills a sphere of the given radius around the movers on the repeated axes. */
-  previewSupercell(radius) {
+  /* Box size (in cells) whose shortest repeated edge spans 2 × radius, kept between 0.5 and 3 cells (card previews). */
+  boxFor(radius) {
     const axes = this.repeatAxes();
     const short = this.lattice.cell.filter((v, k) => axes[k]).map((v) => Math.hypot(v[0], v[1], v[2]));
-    return short.length && Math.min(...short) < 2 * radius ? 3 : 1;
+    if (!short.length) return 1;
+    return Math.max(0.5, Math.min(3, (2 * radius) / Math.min(...short)));
+  }
+
+  /* Every drawn image as [atom, shift x, y, z, primary], cached per reaction, centre and box/supercell size.
+     Box mode: an atom image is kept when its saddle position lies in [-box/2, box/2) cells from the centre on every
+     repeated axis (membership from the saddle frame, so atoms do not pop across the box edge while animating);
+     primary is its image in the home cell [-1/2, 1/2). Supercell mode: whole cells around the wrapped home cell. */
+  imageList(centre) {
+    const s = this.settings;
+    const key = `${this.reaction}|${centre.join(",")}|${s.box}|${s.supercell}`;
+    if (this.imageCache && this.imageCache.key === key) return this.imageCache.list;
+    const { store, lattice } = this;
+    const axes = this.repeatAxes();
+    const list = [];
+    if (s.box > 0) {
+      const saddle = store.frame(this.reaction, 1); const h = s.box / 2;
+      for (let atom = 0; atom < store.n; atom += 1) {
+        const i = atom * 3;
+        const f = lattice.fractional(saddle[i] - centre[0], saddle[i + 1] - centre[1], saddle[i + 2] - centre[2]);
+        const ranges = f.map((v, k) => {
+          if (!axes[k]) return [0];
+          const out = [];
+          for (let n = Math.ceil(-h - v); n + v < h; n += 1) out.push(n);
+          return out;
+        });
+        for (const a of ranges[0]) for (const b of ranges[1]) for (const c of ranges[2]) {
+          const shift = lattice.cartesian(a, b, c);
+          const home = [a, b, c].every((n, k) => !axes[k] || (n + f[k] >= -0.5 && n + f[k] < 0.5));
+          list.push([atom, shift[0], shift[1], shift[2], home]);
+        }
+      }
+    } else {
+      const wrap = this.wrapShifts(centre);
+      const span = axes.map((p) => (p ? s.supercell : 1));
+      const half = span.map((n) => Math.floor((n - 1) / 2));
+      for (let u = -half[0]; u < span[0] - half[0]; u += 1)
+        for (let v = -half[1]; v < span[1] - half[1]; v += 1)
+          for (let w = -half[2]; w < span[2] - half[2]; w += 1) {
+            const shift = lattice.cartesian(u, v, w);
+            const home = u === 0 && v === 0 && w === 0;
+            for (let atom = 0; atom < store.n; atom += 1) {
+              const i = atom * 3;
+              list.push([atom, wrap[i] + shift[0], wrap[i + 1] + shift[1], wrap[i + 2] + shift[2], home]);
+            }
+          }
+    }
+    this.imageCache = { key, list };
+    return list;
   }
 
   /* Bonds between drawn atoms (all images): distance under 1.15 × the sum of covalent radii, found with a grid.
@@ -176,6 +269,7 @@ SM.Viewer = class Viewer {
      selected atom. */
   emphasised(atom, sizes) {
     const s = this.settings;
+    if (s.colour === "values" && s.atomValues) return s.atomValues[atom] > 0 || s.pinned.has(atom) || s.selected === atom;
     return (sizes[atom] > s.threshold && !this.store.fixed[atom]) || s.pinned.has(atom) || s.selected === atom
       || (s.compare.size > 0 && s.colour === "highlight" && this.compareColour(atom, this.lastPalette) !== null);
   }
@@ -246,7 +340,7 @@ SM.Viewer = class Viewer {
       }
       const colour = this.colourFor(atom, sizes, range, palette, primary);
       const alpha = s.fade > 0 && !this.emphasised(atom, sizes, primary) ? 1 - s.fade : 1;
-      this.buffer.set([x, y, z, SM.geo.RADII[store.numbers[atom]] * 0.92 * s.atomScale, colour[0], colour[1], colour[2], this.isMover(atom, sizes, primary) ? 1 : 0, alpha], cursor * SM.STRIDE);
+      this.buffer.set([x, y, z, SM.geo.RADII[store.numbers[atom]] * 0.92 * s.atomScale, colour[0], colour[1], colour[2], (this.isMover(atom, sizes, primary) ? 1 : 0) + (s.fixedMarks !== false && store.fixed[atom] ? 2 : 0), alpha], cursor * SM.STRIDE);
       drawn.push({ atom, x, y, z, primary });
       cursor += 1;
     };
@@ -256,50 +350,32 @@ SM.Viewer = class Viewer {
         lattice.imagesWithin(positions[i], positions[i + 1], positions[i + 2], centre, s.radius, (x, y, z, primary) => push(atom, x, y, z, primary));
       }
     } else {
-      /* Whole cells: every atom in its image nearest the movers (so the reaction is never split by a cell edge),
-         plus supercell images around that. */
-      const wrap = this.wrapShifts(centre);
-      const span = this.repeatAxes().map((p) => (p ? s.supercell : 1));
-      const half = span.map((n) => Math.floor((n - 1) / 2));
-      for (let u = -half[0]; u < span[0] - half[0]; u += 1) {
-        for (let v = -half[1]; v < span[1] - half[1]; v += 1) {
-          for (let w = -half[2]; w < span[2] - half[2]; w += 1) {
-            const shift = lattice.cartesian(u, v, w);
-            const home = u === 0 && v === 0 && w === 0;
-            for (let atom = 0; atom < store.n; atom += 1) {
-              const i = atom * 3;
-              push(atom, positions[i] + wrap[i] + shift[0], positions[i + 1] + wrap[i + 1] + shift[1], positions[i + 2] + wrap[i + 2] + shift[2], home);
-            }
-          }
-        }
+      /* Focus box or whole cells, every atom placed relative to the movers so the reaction is never split by an edge. */
+      for (const [atom, sx, sy, sz, home] of this.imageList(centre)) {
+        const i = atom * 3;
+        push(atom, positions[i] + sx, positions[i + 1] + sy, positions[i + 2] + sz, home);
       }
     }
     /* Ghosts: each compared reaction's movers at the same path position, translucent in its colour, so two
        reactions moving the same atoms (e.g. mirror-image saddles) show both paths. */
     if (!s.focus && s.compare.size) {
-      const wrap = this.wrapShifts(centre);
-      const span = this.repeatAxes().map((p) => (p ? s.supercell : 1));
-      const half = span.map((n) => Math.floor((n - 1) / 2));
-      const images = [];
-      for (let u = -half[0]; u < span[0] - half[0]; u += 1)
-        for (let v = -half[1]; v < span[1] - half[1]; v += 1)
-          for (let w = -half[2]; w < span[2] - half[2]; w += 1) images.push(lattice.cartesian(u, v, w));
+      const images = this.imageList(centre);
       this.ghostBuffer = this.ghostBuffer || new Float32Array(store.n * 3);
       for (const [reaction, slot] of s.compare) {
         if (reaction === this.reaction) continue;
         const row = SM.matchRow ? SM.matchRow(store, this.reaction, reaction) : reaction;
         const ghost = store.path(row, s.t, this.ghostBuffer);
         const colour = palette.compare[slot % palette.compare.length];
-        for (const atom of store.movers(row, s.threshold)) {
+        const movers = new Set(store.movers(row, s.threshold));
+        for (const [atom, sx, sy, sz] of images) {
+          if (!movers.has(atom)) continue;
           const i = atom * 3;
-          for (const shift of images) {
-            if ((cursor + 1) * SM.STRIDE > this.buffer.length) {
-              const bigger = new Float32Array(this.buffer.length * 2); bigger.set(this.buffer); this.buffer = bigger;
-            }
-            this.buffer.set([ghost[i] + wrap[i] + shift[0], ghost[i + 1] + wrap[i + 1] + shift[1], ghost[i + 2] + wrap[i + 2] + shift[2],
-              SM.geo.RADII[store.numbers[atom]] * 0.92 * s.atomScale * 0.98, colour[0], colour[1], colour[2], 0, 0.55], cursor * SM.STRIDE);
-            cursor += 1;
+          if ((cursor + 1) * SM.STRIDE > this.buffer.length) {
+            const bigger = new Float32Array(this.buffer.length * 2); bigger.set(this.buffer); this.buffer = bigger;
           }
+          this.buffer.set([ghost[i] + sx, ghost[i + 1] + sy, ghost[i + 2] + sz,
+            SM.geo.RADII[store.numbers[atom]] * 0.92 * s.atomScale * 0.98, colour[0], colour[1], colour[2], 0, 0.55], cursor * SM.STRIDE);
+          cursor += 1;
         }
       }
     }
@@ -308,8 +384,17 @@ SM.Viewer = class Viewer {
     return { count: cursor, centre };
   }
 
-  /* The camera frames a sphere of this radius around the pivot (movers); zoom out to see whole cells. */
-  viewSpan() { return this.settings.radius * 1.02; }
+  /* The camera frames a sphere of this radius around the pivot (movers); zoom out to see whole cells. Card previews
+     (frameBox) frame the focus box instead. */
+  viewSpan() {
+    const s = this.settings;
+    if ((this.options.frameBox || s.anchor === "cell") && s.box > 0) {
+      const axes = this.repeatAxes();
+      const half = this.lattice.cell.filter((v, k) => axes[k]).map((v) => (s.box * Math.hypot(v[0], v[1], v[2])) / 2);
+      if (half.length) return Math.max(5, ...half) * 0.95;
+    }
+    return s.radius * 1.02;
+  }
 
   project(x, y, z, view) {
     const { R, pivot, scale, width, height } = view;
@@ -346,6 +431,7 @@ SM.Viewer = class Viewer {
       this.drawVectors(ctx);
       if (this.options.overlay) this.options.overlay(ctx, this);
       this.drawPins(ctx);
+      this.drawMeasure(ctx);
       this.drawLegend(ctx);
     }
   }
@@ -447,6 +533,58 @@ SM.Viewer = class Viewer {
     });
   }
 
+  /* Drawn atoms whose centre is not hidden behind a nearer atom, front first, with screen position and radius
+     (for marks drawn on top of the scene: fixed-atom crosses, site counts). */
+  visibleDrawn() {
+    const view = this.view;
+    const list = this.drawn.map((d) => {
+      const p = this.project(d.x, d.y, d.z, view);
+      return { ...d, sx: p[0], sy: p[1], depth: p[2], r: SM.geo.RADII[this.store.numbers[d.atom]] * 0.92 * this.settings.atomScale * view.scale };
+    }).sort((a, b) => b.depth - a.depth);
+    const cell = Math.max(8, 2 * Math.max(...list.map((d) => d.r), 1));
+    const grid = new Map(); const out = [];
+    const key = (x, y) => `${Math.floor(x / cell)},${Math.floor(y / cell)}`;
+    for (const d of list) {
+      let hidden = false;
+      for (let u = -1; u <= 1 && !hidden; u += 1) for (let w = -1; w <= 1 && !hidden; w += 1) {
+        const near = grid.get(`${Math.floor(d.sx / cell) + u},${Math.floor(d.sy / cell) + w}`);
+        if (near) hidden = near.some((n) => Math.hypot(n.sx - d.sx, n.sy - d.sy) < n.r * 0.8);
+      }
+      if (!hidden) out.push(d);
+      const k = key(d.sx, d.sy);
+      if (!grid.has(k)) grid.set(k, []);
+      grid.get(k).push(d);
+    }
+    return out;
+  }
+
+  /* Distance between the last two pinned atoms (and the angle for the last three), at the current path position,
+     shortest periodic image, shown at the bottom like ASE. */
+  drawMeasure(ctx) {
+    const atoms = [...this.settings.pinned].slice(-3);
+    if (atoms.length < 2) return;
+    const p = this.positions; const L = this.lattice; const sym = (a) => `${SM.geo.SYMBOLS[this.store.numbers[a]]}${a}`;
+    const vec = (a, b) => L.mic(p[b * 3] - p[a * 3], p[b * 3 + 1] - p[a * 3 + 1], p[b * 3 + 2] - p[a * 3 + 2]);
+    const len = (v) => Math.hypot(v[0], v[1], v[2]);
+    const [a, b] = atoms.slice(-2);
+    let text = `${sym(a)} – ${sym(b)}: ${len(vec(a, b)).toFixed(3)} Å`;
+    if (atoms.length === 3) {
+      const [x, y, z] = atoms;
+      const u = vec(y, x); const w = vec(y, z);
+      const cos = (u[0] * w[0] + u[1] * w[1] + u[2] * w[2]) / Math.max(len(u) * len(w), 1e-9);
+      text = `${sym(x)} – ${sym(y)}: ${len(u).toFixed(3)} Å · ${sym(y)} – ${sym(z)}: ${len(w).toFixed(3)} Å · angle ${sym(x)}-${sym(y)}-${sym(z)}: ${(Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI).toFixed(1)}°`;
+    }
+    const style = getComputedStyle(this.canvas);
+    ctx.save();
+    ctx.font = "600 12.5px system-ui, sans-serif";
+    const w = ctx.measureText(text).width + 16;
+    ctx.globalAlpha = 0.9; ctx.fillStyle = style.getPropertyValue("--panel").trim();
+    ctx.fillRect(8, this.view.height - 32, w, 24); ctx.globalAlpha = 1;
+    ctx.fillStyle = style.getPropertyValue("--ink").trim();
+    ctx.fillText(text, 16, this.view.height - 15);
+    ctx.restore();
+  }
+
   drawPins(ctx) {
     const s = this.settings;
     if (!s.pinned.size && s.selected == null) return;
@@ -504,17 +642,21 @@ SM.Viewer = class Viewer {
         const before = Math.atan2(last[1] - cy, last[0] - cx); const after = Math.atan2(e.clientY - cy, e.clientX - cx);
         let delta = after - before;
         if (delta > Math.PI) delta -= 2 * Math.PI; if (delta < -Math.PI) delta += 2 * Math.PI;
-        s.roll -= delta;
+        s.turn(2, -delta);
       } else if (panning) { s.panX += dx; s.panY -= dy; } else {
-        s.yaw += dx * 0.008;
-        s.pitch = SM.wrapAngle(s.pitch + dy * 0.008);
+        /* Trackball in the current screen frame (as in ASE): right drag turns about screen vertical, down about horizontal. */
+        if (dx) s.turn(1, dx * 0.008);
+        if (dy) s.turn(0, dy * 0.008);
       }
       last = [e.clientX, e.clientY];
       s.redraw();
     });
     c.addEventListener("pointerup", (e) => {
-      if (last && moved < 5 && this.options.onPick) this.options.onPick(this.pick(e.clientX, e.clientY));
+      /* End the drag first, so an error in the click handler can never leave the view stuck rotating. */
+      const click = last && moved < 5;
       last = null;
+      if (c.hasPointerCapture && c.hasPointerCapture(e.pointerId)) c.releasePointerCapture(e.pointerId);
+      if (click && this.options.onPick) this.options.onPick(this.pick(e.clientX, e.clientY));
     });
     c.addEventListener("pointercancel", () => { last = null; });
     c.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -524,11 +666,10 @@ SM.Viewer = class Viewer {
       s.redraw();
     }, { passive: false });
     c.addEventListener("keydown", (e) => {
-      if (e.key === "q" || e.key === "e") { s.roll += e.key === "q" ? 0.1 : -0.1; s.redraw(); return; }
-      const turn = { a: [-0.1, 0], d: [0.1, 0], w: [0, -0.1], s: [0, 0.1] }[e.key];
+      if (e.key === "q" || e.key === "e") { s.turn(2, e.key === "q" ? 0.1 : -0.1); s.redraw(); return; }
+      const turn = { a: [1, -0.1], d: [1, 0.1], w: [0, -0.1], s: [0, 0.1] }[e.key];
       if (!turn) return;
-      s.yaw += turn[0];
-      s.pitch = SM.wrapAngle(s.pitch + turn[1]);
+      s.turn(turn[0], turn[1]);
       s.redraw();
     });
   }

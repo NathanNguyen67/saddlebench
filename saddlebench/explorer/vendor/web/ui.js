@@ -362,6 +362,9 @@ SM.FLAG_RULES = {
   seed_energy: { title: "Seed energy mismatch", why: "DoubleMin endpoints matched to the seed differ from its stored energy by more than 0.02 eV (spread shown). Tight seed convergence or precision differences." },
   multi_endpoint: { title: "Saddle reaching 3 or more minima", why: "DoubleMins from one saddle group scattered into several minima: a flat or poorly converged saddle, or loose DoubleMins. Such groups never reach the five-agree skip, so they collect many DoubleMins." },
   twins: { title: "Twin saddles", why: "Different saddle groups with a shared endpoint pair, saddle energies within 2 meV and saddles within 0.4 Å: possibly one saddle converged to slightly different points." },
+  iso_products: { title: "Isoenergetic minima from one saddle", why: "One saddle whose DoubleMins reached two different minima (more than 0.2 Å apart) within 2 meV of each other, e.g. an H rotating about an O. Possibly one flat basin split by the 0.2 Å identity cutoff. Shows the maxdev between the two minima and the atoms that differ most." },
+  new_slide: { title: "Slide caught by the new rule (Nov 22)", why: "Excluded as an aligned slide only since the Nov 22 rule: an infinite (periodic) group of at least 6 atoms translating together by 0.2 Å or more (the old rule needed 0.5 Å). Rows marked SUSPECT come first: a small chain (under 25% of free atoms) while something else moves more than 4× as far, which may be lattice relaxation around a real local event wrapping a small cell." },
+  fragment_shift: { title: "Whole fragment or layer moving together (not flagged as a slide)", why: "A connected fragment or layer of at least 6 atoms moves as a unit (coherence ≥ 0.9) but the reaction is not labelled an aligned slide. The slide test only builds rigid groups from atoms moving more than 0.5 Å, so a sheet shifting 0.2 to 0.5 Å is missed. Check whether the fragment is infinite (periodic) and should be excluded." },
 };
 
 SM.computeFlags = (store) => {
@@ -407,6 +410,44 @@ SM.computeFlags = (store) => {
       seen.add(key);
       out.twins.push({ reactions: [a.id, b.id], text: `${a.saddle.slice(4, 10)} vs ${b.saddle.slice(4, 10)}: saddles ${d.toFixed(2)} Å apart, ΔE ${(1000 * (b.eS - a.eS)).toFixed(1)} meV, both ${store.label(a.reactant)} → ${store.label(a.product)}`, sort: d });
     }
+  });
+  bySaddle.forEach((rows) => {
+    /* Distinct minima reached from this saddle, with energies relative to the seed; compare each pair once. */
+    const minima = new Map();
+    rows.forEach((r) => {
+      if (!minima.has(r.reactant)) minima.set(r.reactant, { row: r.id, side: 0, e: r.eR });
+      if (!minima.has(r.product)) minima.set(r.product, { row: r.id, side: 2, e: r.eP });
+    });
+    const list = [...minima.entries()];
+    for (let i = 0; i < list.length; i += 1) for (let j = i + 1; j < list.length; j += 1) {
+      const [ma, a] = list[i]; const [mb, b] = list[j];
+      if (Math.abs(a.e - b.e) >= 0.002) continue;
+      const diff = SM.frameDiff(store, a.row, a.side, b.row, b.side);
+      if (diff.max <= 0.2) continue;
+      const atoms = diff.top.filter(([, v]) => v > 0.2).slice(0, 4).map(([k, v]) => `${SM.geo.SYMBOLS[store.numbers[k]]}${k} ${v.toFixed(2)}`).join(", ");
+      const ids = [...new Set([a.row, b.row])];
+      out.iso_products.push({ reactions: ids, sort: -diff.max,
+        text: `saddle ${rows[0].saddle.slice(4, 10)}: ${store.label(ma)} vs ${store.label(mb)}, ΔE ${(1000 * (b.e - a.e)).toFixed(1)} meV, maxdev ${diff.max.toFixed(2)} Å (${atoms})` });
+    }
+  });
+  const seenSlide = new Set();
+  store.reactions.forEach((r) => {
+    const slide = (r.motion?.groups || []).filter((x) => x.via === "translation").sort((a, b) => b.size - a.size)[0];
+    if (!slide || seenSlide.has(r.saddle)) return;
+    seenSlide.add(r.saddle);
+    const inside = new Set(slide.atoms); const sizes = store.moveSizes(r.id);
+    let other = 0; for (let i = 0; i < store.n; i += 1) if (!inside.has(i) && !store.fixed[i] && sizes[i] > other) other = sizes[i];
+    const share = slide.size / store.nFree;
+    const suspect = share < 0.25 && other > 4 * slide.meanMove_A;
+    out.new_slide.push({ reactions: [r.id], sort: (suspect ? -1000 : 0) - other / slide.meanMove_A,
+      text: `${suspect ? "SUSPECT · " : ""}${slide.size}/${store.nFree} free atoms slide ${slide.meanMove_A.toFixed(2)} Å; largest other move ${other.toFixed(2)} Å; barrier ${SM.fmt.ev(r.barrier)} eV` });
+  });
+  store.reactions.forEach((r) => {
+    const m = r.motion || {}; const g = m.group;
+    const aligned = (m.groups || []).some((x) => x.kind === "aligned");
+    if (!g || aligned || g.atoms < 6 || g.fraction < 0.9 || m.resultant < 0.9) return;
+    out.fragment_shift.push({ reactions: [r.id], sort: -g.atoms,
+      text: `${g.atoms}-atom ${g.kind} moves together (coherence ${m.resultant.toFixed(2)}, largest move ${(m.max_A ?? 0).toFixed(2)} Å), barrier ${SM.fmt.ev(r.barrier)} eV, labelled ${m.label}` });
   });
   Object.values(out).forEach((list) => list.sort((x, y) => x.sort - y.sort));
   store._flags = out;

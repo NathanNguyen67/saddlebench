@@ -108,6 +108,21 @@ SM.Store = class Store {
     return sizes;
   }
 
+  /* Primary atom: the free atom moving most from reactant to saddle (cached). */
+  primaryAtom(reaction) {
+    if (!this.primaries) this.primaries = new Map();
+    if (this.primaries.has(reaction)) return this.primaries.get(reaction);
+    const a = this.frame(reaction, 1); const b = this.frame(reaction, 0);
+    let best = 0; let size = -1;
+    for (let i = 0; i < this.n; i += 1) {
+      if (this.fixed[i]) continue;
+      const m = Math.hypot(a[i * 3] - b[i * 3], a[i * 3 + 1] - b[i * 3 + 1], a[i * 3 + 2] - b[i * 3 + 2]);
+      if (m > size) { size = m; best = i; }
+    }
+    this.primaries.set(reaction, best);
+    return best;
+  }
+
   movers(reaction, threshold) {
     const sizes = this.moveSizes(reaction);
     const out = [];
