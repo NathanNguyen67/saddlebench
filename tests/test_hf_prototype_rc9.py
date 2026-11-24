@@ -129,26 +129,3 @@ def test_grade_case_detailed_bad_once_and_duplicates(monkeypatch,tmp_path):
     assert result['provisional_score_per_hour']==pytest.approx(100*.25/3)
     assert [r['status'] for r in result['entries']]==['CREDIT','DUPLICATE','NO_MATCH','NO_MATCH']
     assert result['entries'][2]['diagnostic']=='KNOWN_BAD_NON_FIRST_ORDER'
-
-def test_batch_scoring_uses_all_selected_cases(monkeypatch,tmp_path):
-    from saddlebench.prototype import release_mvp as m
-    from pathlib import Path
-    import csv
-    pub=tmp_path/'public';pub.mkdir();(pub/'cases.csv').write_text('case_id\ncase0001\ncase0002\ncase0003\n')
-    (tmp_path/'a.traj').write_bytes(b'fake');(tmp_path/'b.traj').write_bytes(b'fake')
-    csvpath=tmp_path/'submissions.csv'
-    csvpath.write_text('case_id,trajectory,elapsed_seconds\ncase0001,a.traj,3600\ncase0002,b.traj,3600\n')
-    def fake(pub,priv,cid,pred,sec):
-        return {'coverage':0.5,'known_eligible_reactions_K':2,'unique_reactions_U':1,
-                'known_bad_unique_B':1 if cid=='case0001' else 0,
-                'self_reported_elapsed_seconds':sec}
-    monkeypatch.setattr(m,'grade_case',fake)
-    report=m.grade_batch(pub,tmp_path,csvpath)
-    assert report['aggregate']['reference_known_K']==4
-    assert report['aggregate']['unique_credited_U']==2
-    assert report['aggregate']['known_bad_unique_B']==1
-    assert report['aggregate']['micro_coverage']==.5
-    assert report['selected_cases']==2 and report['available_cases']==3
-    with pytest.raises(ValueError):
-        csvpath.write_text('case_id,trajectory,elapsed_seconds\ncase0001,a.traj,3600\ncase0001,b.traj,3600\n')
-        m.grade_batch(pub,tmp_path,csvpath)

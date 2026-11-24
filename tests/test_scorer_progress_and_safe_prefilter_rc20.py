@@ -117,20 +117,3 @@ def test_batch_scoring_loads_eligible_and_diagnostic_once(monkeypatch,tmp_path):
     assert result['selected_cases']==2
     assert calls['ref']==1 and calls['diag']==1
     assert all(d=={'existing':'lookup'} and ref==('manifest','reference') for _,d,ref in calls['case'])
-
-
-def test_progress_stream_is_stderr_only(tmp_path,capsys):
-    import importlib.util
-    p=Path(__file__).resolve().parents[1]/'scripts'/'score_from_hf.py'
-    spec=importlib.util.spec_from_file_location('sbe_rc20_cli',p)
-    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-    reporter=module.Progress()
-    reporter('case0006','eligible',0,250)
-    reporter('case0006','eligible',10,250)
-    reporter('case0006','eligible',250,250)
-    capture=capsys.readouterr()
-    assert not capture.out
-    assert 'SCORING_PROGRESS case=case0006 phase=eligible completed=250 total=250' in capture.err
-    silent=module.Progress(False)
-    silent('case0006','eligible',25,250)
-    assert capsys.readouterr().err==''

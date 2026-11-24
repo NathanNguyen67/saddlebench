@@ -41,7 +41,8 @@ def geo(d):
     p=np.arange(30,dtype=float).reshape(10,3)/10
     p[:,0]+=d*np.arange(10)/10
     return {'numbers':[6]*10,'positions_angstrom':p.tolist(),
-            'cell_angstrom':(np.eye(3)*20).tolist(),'pbc':[False]*3}
+            'cell_angstrom':(np.eye(3)*20).tolist(),'pbc':[False]*3,
+            'fixed_indices':[],'constraints_known':True}
 
 
 def mock_data(tmp_path, monkeypatch):
