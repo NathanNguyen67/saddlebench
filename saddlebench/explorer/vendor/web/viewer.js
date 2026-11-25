@@ -450,6 +450,7 @@ SM.Viewer = class Viewer {
       this.drawPins(ctx);
       this.drawMeasure(ctx);
       this.drawLegend(ctx);
+      this.drawScale(ctx);
     }
   }
 
@@ -526,6 +527,29 @@ SM.Viewer = class Viewer {
         this.arrow(ctx, from, to, colour);
       });
     });
+  }
+
+  /* Map-style scale bar (orthographic view: pixels per angstrom are the same everywhere). Atoms are drawn at
+     0.92 x covalent radius x atom size, so this also tells how big a 0.2 A shift is next to an atom. */
+  drawScale(ctx) {
+    const v = this.view;
+    if (!v || !(v.scale > 0)) return;
+    const nice = [0.1, 0.2, 0.25, 0.5, 1, 2, 5, 10, 20, 50];
+    const L = nice.find((x) => x * v.scale >= 60) || 50;
+    const px = L * v.scale;
+    const style = getComputedStyle(this.canvas);
+    const ink = style.getPropertyValue("--ink").trim() || "#222";
+    const panel = style.getPropertyValue("--panel").trim() || "#fff";
+    const label = L + " Å";
+    ctx.save();
+    ctx.font = "600 12px system-ui, sans-serif";
+    const w = px + ctx.measureText(label).width + 26;
+    const x = v.width - w - 4; const y = v.height - 14;
+    ctx.globalAlpha = 0.8; ctx.fillStyle = panel; ctx.fillRect(x - 6, y - 16, w + 4, 26); ctx.globalAlpha = 1;
+    ctx.strokeStyle = ink; ctx.fillStyle = ink; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + px, y); ctx.moveTo(x, y - 6); ctx.lineTo(x, y + 2); ctx.moveTo(x + px, y - 6); ctx.lineTo(x + px, y + 2); ctx.stroke();
+    ctx.fillText(label, x + px + 8, y + 4);
+    ctx.restore();
   }
 
   /* While comparing: which atoms are the selected reaction and which are ghosts. */
