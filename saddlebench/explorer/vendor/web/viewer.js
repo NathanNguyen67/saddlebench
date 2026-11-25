@@ -23,6 +23,8 @@ SM.ViewSettings = class ViewSettings {
       /* atomScale multiplies drawn radii; keepView keeps the camera pivot and image wrapping when the reaction
          changes; compare maps reaction id -> colour slot, and those reactions' movers are drawn in that colour. */
       atomScale: 1, keepView: false, compare: new Map(), roll: 0, bonds: false,
+      /* ghostT: reaction id -> pinned path position (-1 reactant, 0 saddle, 1 product); absent = follow the slider. */
+      ghostT: new Map(),
       /* orient: view rotation rows (screen x, y, depth in world coordinates). Built from yaw/pitch/roll, then every
          drag turns it about the current screen axes, so a spin never changes what a later drag does. */
       orient: null,
@@ -148,6 +150,11 @@ SM.Viewer = class Viewer {
       const v = s.atomValues[atom];
       if (!(v > 0)) return this.store.fixed[atom] ? palette.fixed : palette.neutral;
       return SM.geo.ramp(0.15 + 0.85 * Math.min(1, v / Math.max(s.atomValuesMax || 1, 1e-9)));
+    }
+    if (s.colour === "diff" && SM.firstPinned && SM.firstPinned(s, this.reaction) !== null && SM.frameOfT(s.t) !== null) {
+      const g = SM.firstPinned(s, this.reaction);
+      const diff = SM.frameDiff(this.store, this.reaction, SM.frameOfT(s.t), g, SM.frameOfT(s.ghostT.get(g)));
+      return SM.geo.ramp(Math.min(1, diff.per[atom] / Math.max(diff.max, 0.05)));
     }
     if (s.colour === "diff") {
       const other = [...s.compare.keys()].find((id) => this.store.reactions[id].saddle !== this.store.reactions[this.reaction].saddle);
@@ -362,11 +369,21 @@ SM.Viewer = class Viewer {
       const images = this.imageList(centre);
       this.ghostBuffer = this.ghostBuffer || new Float32Array(store.n * 3);
       for (const [reaction, slot] of s.compare) {
-        if (reaction === this.reaction) continue;
-        const row = SM.matchRow ? SM.matchRow(store, this.reaction, reaction) : reaction;
-        const ghost = store.path(row, s.t, this.ghostBuffer);
+        if (reaction === this.reaction && !(s.ghostT && s.ghostT.has(reaction))) continue;
+        /* A pinned ghost shows exactly that reaction at its chosen frame and draws every atom that differs from the
+           solid frame by more than 0.05 A, so two nearly identical minima can be laid on top of each other. */
+        const pin = s.ghostT ? s.ghostT.get(reaction) : undefined;
+        const row = pin !== undefined ? reaction : (SM.matchRow ? SM.matchRow(store, this.reaction, reaction) : reaction);
+        const ghost = store.path(row, pin !== undefined ? pin : s.t, this.ghostBuffer);
         const colour = palette.compare[slot % palette.compare.length];
-        const movers = new Set(store.movers(row, s.threshold));
+        let movers;
+        if (pin !== undefined) {
+          movers = new Set(); const L = store.lattice || (store.lattice = new SM.geo.Lattice(store.cell, store.pbc));
+          for (let a = 0; a < store.n; a += 1) {
+            const v = L.mic(ghost[a * 3] - positions[a * 3], ghost[a * 3 + 1] - positions[a * 3 + 1], ghost[a * 3 + 2] - positions[a * 3 + 2]);
+            if (Math.hypot(v[0], v[1], v[2]) > 0.05) movers.add(a);
+          }
+        } else movers = new Set(store.movers(row, s.threshold));
         for (const [atom, sx, sy, sz] of images) {
           if (!movers.has(atom)) continue;
           const i = atom * 3;
@@ -514,14 +531,31 @@ SM.Viewer = class Viewer {
   /* While comparing: which atoms are the selected reaction and which are ghosts. */
   drawLegend(ctx) {
     const s = this.settings;
-    const others = [...s.compare].filter(([id]) => id !== this.reaction);
+    const others = [...s.compare].filter(([id]) => id !== this.reaction || (s.ghostT && s.ghostT.has(id)));
     if (s.focus || !others.length) return;
     const style = getComputedStyle(this.canvas);
     const r = this.store.reactions[this.reaction];
     const lines = [[style.getPropertyValue("--ink").trim(), `Solid: selected ${r.saddle.slice(4, 10)} (${this.store.label(r.reactant)} → ${this.store.label(r.product)})`]];
+    const FRAME = { "-1": "reactant", 0: "saddle", 1: "product" };
+    const side = (t) => (t < 0 ? 0 : t > 0 ? 2 : 1);
+    const energy = (x, k) => [x.eR, x.eS, x.eP][k];
+    const atEnd = s.t === -1 || s.t === 0 || s.t === 1;
     others.forEach(([id, slot]) => {
-      const m = this.store.reactions[SM.matchRow(this.store, this.reaction, id)];
-      lines.push([style.getPropertyValue(SM.FAN_COLOURS[slot % 8]).trim(), `Ghost: ${m.saddle.slice(4, 10)} (${this.store.label(m.reactant)} → ${this.store.label(m.product)})`]);
+      const pin = s.ghostT ? s.ghostT.get(id) : undefined;
+      const m = this.store.reactions[pin !== undefined ? id : SM.matchRow(this.store, this.reaction, id)];
+      const colour = style.getPropertyValue(SM.FAN_COLOURS[slot % 8]).trim();
+      if (pin === undefined) {
+        lines.push([colour, `Ghost: ${m.saddle.slice(4, 10)} (${this.store.label(m.reactant)} → ${this.store.label(m.product)}), follows the slider`]);
+        return;
+      }
+      const label = m[["reactant", null, "product"][side(pin)]] ? this.store.label(m[["reactant", null, "product"][side(pin)]]) : `saddle ${m.saddle.slice(4, 10)}`;
+      let cmp = "move the slider to an end (or the saddle) to compare";
+      if (atEnd) {
+        const d = SM.frameDiff(this.store, this.reaction, side(s.t), id, side(pin));
+        const dE = 1000 * (energy(m, side(pin)) - energy(r, side(s.t)));
+        cmp = `vs solid ${FRAME[s.t]}: maxdev ${d.max.toFixed(3)} Å, norm ${d.norm.toFixed(3)} Å, ΔE ${dE >= 0 ? "+" : ""}${dE.toFixed(1)} meV`;
+      }
+      lines.push([colour, `Ghost: ${m.saddle.slice(4, 10)} at ${FRAME[pin]} ${label} · ${cmp}`]);
     });
     ctx.font = "600 12px system-ui, sans-serif";
     const w = Math.max(...lines.map(([, t]) => ctx.measureText(t).width)) + 28;

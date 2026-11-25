@@ -98,7 +98,7 @@ SM.Workspace = class Workspace {
               tool("Highlight",
                 h("input", { type: "range", min: 0.05, max: 2, step: 0.05, value: s.threshold, "aria-label": "Highlight atoms moving more than this distance", oninput: (e) => { s.threshold = Number(e.target.value); thresholdValue.textContent = `${s.threshold.toFixed(2)} Å`; this.updateMovers(); s.redraw(); } }), thresholdValue, this.moverCount,
                 h("label", { class: "field-inline" }, "Colour", h("select", { onchange: (e) => { s.colour = e.target.value; s.redraw(); } },
-                  h("option", { value: "highlight" }, "Element, ring movers"), SM.debug ? h("option", { value: "group" }, "Motion groups") : null, h("option", { value: "element" }, "Element"), h("option", { value: "diff" }, "Difference vs compared saddle"), h("option", { value: "displacement" }, "Displacement"), h("option", { value: "height" }, "Height"), h("option", { value: "fixed" }, "Fixed or free")))),
+                  h("option", { value: "highlight" }, "Element, ring movers"), SM.debug ? h("option", { value: "group" }, "Motion groups") : null, h("option", { value: "element" }, "Element"), h("option", { value: "diff" }, "Difference vs compared (pinned frame, else saddle)"), h("option", { value: "displacement" }, "Displacement"), h("option", { value: "height" }, "Height"), h("option", { value: "fixed" }, "Fixed or free")))),
               tool("Vectors", vectorBoxes,
                 h("label", { class: "field-inline" }, "Scale", h("input", { type: "range", min: 0.25, max: 4, step: 0.25, value: 1, oninput: (e) => { s.vectorScale = Number(e.target.value); scaleValue.textContent = `${s.vectorScale.toFixed(1)}×`; s.redraw(); } }), scaleValue)),
               tool("Camera", ["top", "side", "bottom", "iso"].map((name) => h("button", { type: "button", onclick: () => s.camera(name) }, name[0].toUpperCase() + name.slice(1))),
@@ -180,9 +180,12 @@ SM.Workspace = class Workspace {
         const r = this.store.reactions[id];
         return h("span", { class: "compare-chip" }, h("i", { class: "swatch", style: `background:var(${SM.FAN_COLOURS[slot % 8]})` }),
           h("button", { type: "button", class: "linkish", title: "Open this reaction", onclick: () => this.goto(id) }, `${r.saddle.slice(4, 10)}${r.classes[0] !== this.cls.id ? ` (${r.classes[0]})` : ""}`),
-          h("button", { type: "button", class: "chip-x", "aria-label": "Stop comparing", onclick: () => { map.delete(id); changed(); } }, "×"));
+          h("select", { class: "ghost-frame", title: "Frame this ghost shows: follow the main slider, or pin it at its reactant, saddle or product",
+            "aria-label": "Ghost frame", onchange: (e) => { const v = e.target.value; if (v === "") this.settings.ghostT.delete(id); else this.settings.ghostT.set(id, Number(v)); this.inspector.render(); this.settings.redraw(); } },
+            [["", "slider"], ["-1", "reactant"], ["0", "saddle"], ["1", "product"]].map(([v, t]) => h("option", { value: v, selected: String(this.settings.ghostT.get(id) ?? "") === v }, t))),
+          h("button", { type: "button", class: "chip-x", "aria-label": "Stop comparing", onclick: () => { map.delete(id); this.settings.ghostT.delete(id); changed(); } }, "×"));
       })),
-      h("button", { type: "button", onclick: () => { map.clear(); changed(); } }, "Clear"));
+      h("button", { type: "button", onclick: () => { map.clear(); this.settings.ghostT.clear(); changed(); } }, "Clear"));
   }
 
   setBox(x) {
@@ -395,6 +398,8 @@ SM.Workspace = class Workspace {
     this.slider.value = Math.round(t * 100);
     this.position.textContent = t === 0 ? "Saddle" : t === -1 ? "Reactant" : t === 1 ? "Product" : `${Math.round(Math.abs(t) * 100)}% to ${t < 0 ? "reactant" : "product"}`;
     this.energy.render(t);
+    if (SM.frameOfT(t) !== null || this._lastFrameT !== null) this.inspector.render();
+    this._lastFrameT = SM.frameOfT(t);
     s.redraw();
   }
 

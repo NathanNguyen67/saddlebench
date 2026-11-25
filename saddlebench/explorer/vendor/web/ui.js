@@ -338,6 +338,13 @@ SM.saddleRows = (store, saddle) => {
 
 /* The row of reaction `other`'s saddle that best matches reaction `selected`: the same endpoint pair, else the same
    product, else the same reactant, else `other` itself. Compares like with like when saddles reach several minima. */
+/* Pinned-ghost helpers (compare): frame index 0 reactant / 1 saddle / 2 product for a path position, or null between. */
+SM.frameOfT = (t) => (t === -1 ? 0 : t === 0 ? 1 : t === 1 ? 2 : null);
+SM.firstPinned = (settings, selected) => {
+  for (const [id] of settings.compare) if (settings.ghostT && settings.ghostT.has(id)) return id;
+  return null;
+};
+
 SM.matchRow = (store, selected, other) => {
   const a = store.reactions[selected]; const o = store.reactions[other];
   if (!a || !o || a.saddle === o.saddle) return other;
@@ -364,6 +371,7 @@ SM.FLAG_RULES = {
   twins: { title: "Twin saddles", why: "Different saddle groups with a shared endpoint pair, saddle energies within 2 meV and saddles within 0.4 Å: possibly one saddle converged to slightly different points." },
   iso_products: { title: "Isoenergetic minima from one saddle", why: "One saddle whose DoubleMins reached two different minima (more than 0.2 Å apart) within 2 meV of each other, e.g. an H rotating about an O. Possibly one flat basin split by the 0.2 Å identity cutoff. Shows the maxdev between the two minima and the atoms that differ most." },
   new_slide: { title: "Slide caught by the new rule (Nov 22)", why: "Excluded as an aligned slide only since the Nov 22 rule: an infinite (periodic) group of at least 6 atoms translating together by 0.2 Å or more (the old rule needed 0.5 Å). Rows marked SUSPECT come first: a small chain (under 25% of free atoms) while something else moves more than 4× as far, which may be lattice relaxation around a real local event wrapping a small cell." },
+  slide_local: { title: "Aligned slide + local event", why: "An infinite (periodic) group moves coherently (a slide) AND at least one atom moves more than 0.5 Å differently from the slide's mean displacement, e.g. a carbon flipping while the graphene layer shifts, or a row slide that pushes atoms into a pentagon near the adatom. Excluded from scoring like other slides (Nathan, 2026-11-24); listed so the local part can be reviewed. Largest deviations first." },
   fragment_shift: { title: "Whole fragment or layer moving together (not flagged as a slide)", why: "A connected fragment or layer of at least 6 atoms moves as a unit (coherence ≥ 0.9) but the reaction is not labelled an aligned slide. The slide test only builds rigid groups from atoms moving more than 0.5 Å, so a sheet shifting 0.2 to 0.5 Å is missed. Check whether the fragment is infinite (periodic) and should be excluded." },
 };
 
@@ -441,6 +449,26 @@ SM.computeFlags = (store) => {
     const suspect = share < 0.25 && other > 4 * slide.meanMove_A;
     out.new_slide.push({ reactions: [r.id], sort: (suspect ? -1000 : 0) - other / slide.meanMove_A,
       text: `${suspect ? "SUSPECT · " : ""}${slide.size}/${store.nFree} free atoms slide ${slide.meanMove_A.toFixed(2)} Å; largest other move ${other.toFixed(2)} Å; barrier ${SM.fmt.ev(r.barrier)} eV` });
+  });
+  const seenLocal = new Set();
+  store.reactions.forEach((r) => {
+    const slide = (r.motion?.groups || []).filter((x) => x.kind === "aligned" && x.periodic).sort((a, b) => b.size - a.size)[0];
+    if (!slide || seenLocal.has(r.saddle)) return;
+    seenLocal.add(r.saddle);
+    const d = store.difference(r.id, 2, 0); const mean = [0, 0, 0];
+    slide.atoms.forEach((a) => { mean[0] += d[a * 3]; mean[1] += d[a * 3 + 1]; mean[2] += d[a * 3 + 2]; });
+    mean.forEach((v, k) => { mean[k] = v / slide.atoms.length; });
+    const dev = [];
+    for (let i = 0; i < store.n; i += 1) {
+      if (store.fixed[i]) continue;
+      const x = Math.hypot(d[i * 3] - mean[0], d[i * 3 + 1] - mean[1], d[i * 3 + 2] - mean[2]);
+      if (x > 0.5 && Math.hypot(d[i * 3], d[i * 3 + 1], d[i * 3 + 2]) > 0.2) dev.push([x, i]);
+    }
+    if (!dev.length) return;
+    dev.sort((a, b) => b[0] - a[0]);
+    const sym = (i) => `${SM.geo.SYMBOLS ? SM.geo.SYMBOLS[store.numbers[i]] || store.numbers[i] : store.numbers[i]}${i}`;
+    out.slide_local.push({ reactions: [r.id], sort: -dev[0][0],
+      text: `${slide.size}/${store.nFree} free atoms slide ${Math.hypot(...mean).toFixed(2)} Å; ${dev.length} atom${dev.length > 1 ? "s" : ""} off the slide (${dev.slice(0, 3).map(([x, i]) => `${sym(i)} ${x.toFixed(2)} Å`).join(", ")}); barrier ${SM.fmt.ev(r.barrier)} eV` });
   });
   store.reactions.forEach((r) => {
     const m = r.motion || {}; const g = m.group;

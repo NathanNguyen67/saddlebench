@@ -23,15 +23,47 @@ SM.Inspector = class Inspector {
   comparePanel() {
     const { h, fmt } = SM;
     const r = this.store.reactions[this.reaction];
-    const all = [...this.settings.compare].filter(([id]) => id !== this.reaction);
+    const all = [...this.settings.compare].filter(([id]) => id !== this.reaction || (this.settings.ghostT && this.settings.ghostT.has(id)));
     const others = all.filter(([id]) => this.store.reactions[id].saddle !== r.saddle);
     const siblings = all.filter(([id]) => this.store.reactions[id].saddle === r.saddle);
     if (!all.length) return null;
     const atomName = (i) => `${SM.geo.SYMBOLS[this.store.numbers[i]]} ${i}`;
     const names = (ids) => (ids.length ? ids.map((x) => this.store.label(x)).join(", ") : "none");
+    const FRAME = ["reactant", "saddle", "product"];
+    const solidF = SM.frameOfT(this.settings.t);
+    const frameName = (x, f) => (f === 1 ? `saddle ${x.saddle.slice(4, 10)}` : `${FRAME[f]} ${this.store.label(f === 0 ? x.reactant : x.product)}`);
+    const pinned = all.filter(([id]) => this.settings.ghostT && this.settings.ghostT.has(id)).map(([id, slot]) => {
+      const o = this.store.reactions[id]; const gf = SM.frameOfT(this.settings.ghostT.get(id));
+      if (solidF === null) {
+        return h("div", { class: "compare-item" }, h("p", {}, h("i", { class: "swatch", style: `background:var(${SM.FAN_COLOURS[slot % 8]})` }), " ",
+          h("b", {}, frameName(o, gf)), " (pinned)"), h("p", { class: "muted" }, "Move the slider to the reactant, saddle or product to compare it with the solid frame."));
+      }
+      const d = SM.frameDiff(this.store, this.reaction, solidF, id, gf);
+      const e = (x, f) => [x.eR, x.eS, x.eP][f];
+      const dE = 1000 * (e(o, gf) - e(r, solidF));
+      const count = (cut) => d.per.reduce((t, v, i) => t + (v > cut && !this.store.fixed[i] ? 1 : 0), 0);
+      const rmsd = d.norm / Math.sqrt(Math.max(1, this.store.nFree || this.store.n));
+      const verdict = d.max <= 0.2 ? (Math.abs(dE) <= 2 ? "same minimum by geometry and energy" : "same geometry by the 0.2 Å rule, different energy")
+        : (Math.abs(dE) <= 2 ? "different geometry, same energy" : "different geometry and energy");
+      return h("div", { class: "compare-item" },
+        h("p", {}, h("i", { class: "swatch", style: `background:var(${SM.FAN_COLOURS[slot % 8]})` }), " Frame comparison"),
+        h("dl", { class: "facts dbg-facts" },
+          this.row("Solid", frameName(r, solidF)),
+          this.row("Ghost (pinned)", frameName(o, gf)),
+          this.row("maxdev", `${d.max.toFixed(3)} Å`),
+          this.row("Norm (all atoms)", `${d.norm.toFixed(3)} Å`),
+          this.row("RMSD per free atom", `${rmsd.toFixed(3)} Å`),
+          this.row("Atoms differing", `${count(0.05)} > 0.05 Å · ${count(0.1)} > 0.1 Å · ${count(0.2)} > 0.2 Å`),
+          this.row("ΔE (ghost − solid)", `${dE >= 0 ? "+" : ""}${dE.toFixed(1)} meV`),
+          this.row("Verdict", verdict)),
+        h("p", { class: "muted" }, "Atoms differing most (drift removed). Frames are DoubleMin endpoint geometries; minimum IDs are the stored minimum each endpoint was assigned to:"),
+        h("div", { class: "neighbours" }, d.top.map(([atom, dist]) => h("button", { type: "button", title: "Pin this atom", onclick: () => this.actions.togglePin(atom) },
+          h("b", {}, atomName(atom)), ` ${dist.toFixed(3)} Å`))));
+    });
     return h("section", { class: "inspect-block" },
       h("h3", {}, "Compared with"),
-      others.map(([id, slot]) => {
+      pinned,
+      others.filter(([id]) => !(this.settings.ghostT && this.settings.ghostT.has(id))).map(([id, slot]) => {
         const m = SM.matchRow(this.store, this.reaction, id);
         const o = this.store.reactions[m];
         const samePair = [o.reactant, o.product].sort().join() === [r.reactant, r.product].sort().join();
@@ -52,7 +84,7 @@ SM.Inspector = class Inspector {
           h("div", { class: "neighbours" }, saddle.top.map(([atom, dist]) => h("button", { type: "button", title: "Pin this atom", onclick: () => this.actions.togglePin(atom) },
             h("b", {}, atomName(atom)), ` ${dist.toFixed(2)} Å`))));
       }),
-      siblings.map(([id, slot]) => {
+      siblings.filter(([id]) => !(this.settings.ghostT && this.settings.ghostT.has(id))).map(([id, slot]) => {
         const o = this.store.reactions[id];
         const prod = SM.frameDiff(this.store, this.reaction, 2, id, 2);
         const reac = SM.frameDiff(this.store, this.reaction, 0, id, 0);

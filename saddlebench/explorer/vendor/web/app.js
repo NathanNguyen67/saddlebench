@@ -91,6 +91,13 @@ window.SM = window.SM || {};
             .filter((id) => Number.isInteger(id) && id >= 0 && id < store.reactions.length));
           q.delete("cmp"); writeHash(q);
         }
+        if (q.has("pin")) {
+          /* pin=id:t,... (t = -1 reactant, 0 saddle, 1 product): pin compared ghosts at a frame, for presentation links. */
+          q.get("pin").split(",").forEach((x) => { const [id, t] = x.split(":").map(Number); if ([-1, 0, 1].includes(t)) workspace.settings.ghostT.set(id, t); });
+          q.delete("pin");
+          if (workspace.cls) { workspace.renderSide(); workspace.inspector.render(); }
+        }
+        if (q.has("t") && [-1, 0, 1].includes(Number(q.get("t")))) { workspace.setT ? workspace.setT(Number(q.get("t"))) : (workspace.settings.t = Number(q.get("t"))); q.delete("t"); }
         workspace.show();
         window.scrollTo(0, 0);
       } else {

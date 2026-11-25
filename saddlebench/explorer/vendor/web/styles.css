@@ -198,6 +198,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, canvas:focus-vi
 .compare-chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
 .compare-chip { display: inline-flex; align-items: center; gap: 3px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 4px 1px 6px; }
 .compare-chip .linkish { background: none; border: 0; padding: 0; color: var(--ink); font-weight: 700; cursor: pointer; }
+.compare-chip .ghost-frame { font-size: 11.5px; padding: 0 2px; min-height: 22px; }
 .compare-chip .chip-x { background: none; border: 0; padding: 0 3px; color: var(--muted); cursor: pointer; }
 details.runs { margin-top: 8px; }
 details.runs summary { cursor: pointer; color: var(--muted); font-size: 12.5px; margin-bottom: 6px; }
@@ -240,8 +241,9 @@ details.runs summary { cursor: pointer; color: var(--muted); font-size: 12.5px; 
 @media (max-width: 900px) { .gv-views { grid-template-columns: 1fr; } }
 
 /* Debug detail panels (debugfacts.js): labels keep their width, long values wrap instead of overlapping. */
-.facts.dbg-facts { grid-template-columns: minmax(8.5em, max-content) minmax(0, 1fr); }
-.facts.dbg-facts dd { overflow-wrap: anywhere; }
+.facts.dbg-facts { grid-template-columns: minmax(6em, 42%) minmax(0, 1fr); }
+.facts.dbg-facts dt { overflow-wrap: break-word; }
+.facts.dbg-facts dd { min-width: 0; overflow-wrap: break-word; }
 .dbg-why { margin: 6px 0; padding: 6px 8px; border-left: 3px solid #b54708; background: color-mix(in srgb, #b54708 10%, transparent); font-size: 13px; }
 .dbg-dm { margin: 6px 0 0; padding-left: 20px; font-size: 13px; display: grid; gap: 3px; }
 .dbg-dm li.on { font-weight: 600; }
