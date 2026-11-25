@@ -36,8 +36,8 @@ SM.Renderer = class Renderer {
            as the atom is). */
         if (mod(ring, 2.0) > 0.5) c = mix(c, ringColour, smoothstep(0.66, 0.74, sqrt(d)));
         if (ring > 1.5 && d < 0.55 && min(abs(uv.x - uv.y), abs(uv.x + uv.y)) < 0.13) c = mix(c, vec3(0.1), 0.7);
-        float f = clamp((fogRange.y - (z + nz * r)) / max(fogRange.y - fogRange.x, 0.001), 0.0, 1.0);
-        pixel = vec4(mix(c, fog, 0.62 * f) * a, a);
+        /* No depth fog: atoms keep their true colour at every depth (crisp, Nathan 2026-11-25). */
+        pixel = vec4(c * a, a);
         gl_FragDepth = 0.5 - (z + nz * r) / depth * 0.5;
       }`;
     const compile = (type, source) => {

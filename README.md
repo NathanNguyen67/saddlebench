@@ -69,6 +69,8 @@ The `score` report shows your submission beside the four published baseline meth
 
 ### Structure explorer
 
+Browse every campaign structure without running anything: [SaddleMotif Explorer, all 170 structures](https://claude.ai/artifact/Q8PNgdiRo4NYcjivuaMFYM) (epoch-56 snapshot, the same database as the export). The page is private until it is shared.
+
 Every HTML report writes a `*-explorer/` folder beside it. Keep the report and the folder together. Its index shows one card per scored structure, animating a representative reaction on the starting minimum, with how many reference saddles the chosen method found and missed. A table view lists the same structures. Each structure page groups saddles into SaddleMotif classes. Reference saddles are marked **Found** or **Missed** for the method and cutoff chosen at the top. Use the "Missed reference saddles" filter, or click a structure name in the results table, to go straight to the misses. A class opens its reactions with the reactant → saddle → product animation, energies, Search-mode curvature, DoubleMin endpoints and products. Literature structures carry their citation and intended reaction under the title.
 
 Viewer controls: **Supercell** repeats the cell, **Fade others** makes atoms that are not moving, pinned or selected translucent, and clicking an atom pins it with its index (or type indices under Pin atoms). Explorer data are SaddleMotif Explorer payloads built from the same campaign database as the pinned export. They are fetched once per release and checksum-verified. The interpolation between stored frames is schematic, not a computed path. Curvature is along the final Search mode, not a Hessian eigenvalue.
